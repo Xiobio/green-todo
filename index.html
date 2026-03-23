@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'; img-src 'self' data:;">
+  <title>Green Todo</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="app-container" id="app-container">
+    <!-- Decorative background -->
+    <div class="bg-decorations" aria-hidden="true">
+      <svg class="bg-leaf bg-leaf-1" viewBox="0 0 40 50" width="40" height="50">
+        <path d="M20 0C20 0 0 15 0 30C0 45 20 50 20 50C20 50 40 45 40 30C40 15 20 0 20 0Z" fill="currentColor" opacity="0.06"/>
+      </svg>
+      <svg class="bg-leaf bg-leaf-2" viewBox="0 0 30 40" width="30" height="40">
+        <path d="M15 0C15 0 0 12 0 24C0 36 15 40 15 40C15 40 30 36 30 24C30 12 15 0 15 0Z" fill="currentColor" opacity="0.05"/>
+      </svg>
+      <svg class="bg-leaf bg-leaf-3" viewBox="0 0 24 30" width="24" height="30">
+        <path d="M12 0C12 0 0 9 0 18C0 27 12 30 12 30C12 30 24 27 24 18C24 9 12 0 12 0Z" fill="currentColor" opacity="0.07"/>
+      </svg>
+    </div>
+
+    <!-- Title bar -->
+    <div class="title-bar">
+      <div class="title-bar-left">
+        <svg class="title-icon" viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
+          <circle cx="12" cy="8" r="3" fill="#fbbf24"/>
+          <ellipse cx="12" cy="3.5" rx="2.5" ry="3.5" fill="#4ade80" opacity="0.8"/>
+          <ellipse cx="17.2" cy="6.5" rx="2.5" ry="3.5" fill="#22c55e" opacity="0.7" transform="rotate(55 17.2 6.5)"/>
+          <ellipse cx="15" cy="12.5" rx="2.5" ry="3.5" fill="#86efac" opacity="0.6" transform="rotate(120 15 12.5)"/>
+          <ellipse cx="9" cy="12.5" rx="2.5" ry="3.5" fill="#86efac" opacity="0.6" transform="rotate(-120 9 12.5)"/>
+          <ellipse cx="6.8" cy="6.5" rx="2.5" ry="3.5" fill="#22c55e" opacity="0.7" transform="rotate(-55 6.8 6.5)"/>
+          <path d="M12 11V22" stroke="#15803d" stroke-width="1.8" stroke-linecap="round"/>
+        </svg>
+        <div class="title-info">
+          <span class="title-text">Green Todo</span>
+          <span class="greeting-text" id="greeting-text"></span>
+        </div>
+      </div>
+      <div class="title-bar-right">
+        <button class="title-btn" id="export-btn" title="导出数据" aria-label="导出数据">
+          <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true">
+            <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+            <polyline points="7 10 12 15 17 10" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+            <line x1="12" y1="15" x2="12" y2="3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+          </svg>
+        </button>
+        <button class="title-btn" id="mute-btn" title="静音切换" aria-label="切换静音">
+          <svg viewBox="0 0 24 24" width="14" height="14" class="mute-icon-off" aria-hidden="true">
+            <path d="M11 5L6 9H2v6h4l5 4V5z" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linejoin="round"/>
+            <path d="M15.54 8.46a5 5 0 010 7.07" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round"/>
+            <path d="M19.07 4.93a10 10 0 010 14.14" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round"/>
+          </svg>
+          <svg viewBox="0 0 24 24" width="14" height="14" class="mute-icon-on" aria-hidden="true" style="display:none">
+            <path d="M11 5L6 9H2v6h4l5 4V5z" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linejoin="round"/>
+            <line x1="23" y1="9" x2="17" y2="15" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+            <line x1="17" y1="9" x2="23" y2="15" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+          </svg>
+        </button>
+        <button class="title-btn" id="pin-btn" title="置顶切换" aria-label="切换置顶">
+          <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true">
+            <path d="M16 4L18 6L14 14L17 17H7L10 14L6 6L8 4Z" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+            <line x1="12" y1="17" x2="12" y2="22" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+          </svg>
+        </button>
+        <button class="title-btn" id="theme-btn" title="深色/浅色模式" aria-label="切换深浅色模式">
+          <svg viewBox="0 0 24 24" width="14" height="14" class="theme-icon-light" aria-hidden="true">
+            <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" stroke="currentColor" stroke-width="1.5" fill="none"/>
+          </svg>
+          <svg viewBox="0 0 24 24" width="14" height="14" class="theme-icon-dark" aria-hidden="true" style="display:none">
+            <circle cx="12" cy="12" r="5" stroke="currentColor" stroke-width="1.5" fill="none"/>
+            <line x1="12" y1="1" x2="12" y2="4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+            <line x1="12" y1="20" x2="12" y2="23" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+            <line x1="4.22" y1="4.22" x2="5.64" y2="5.64" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+            <line x1="18.36" y1="18.36" x2="19.78" y2="19.78" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+            <line x1="1" y1="12" x2="4" y2="12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+            <line x1="20" y1="12" x2="23" y2="12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+          </svg>
+        </button>
+        <button class="title-btn minimize-btn" id="hide-btn" title="隐藏 (Ctrl+Space)" aria-label="隐藏窗口">
+          <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true">
+            <line x1="5" y1="12" x2="19" y2="12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+          </svg>
+        </button>
+        <button class="title-btn close-btn" id="close-btn" title="退出" aria-label="退出应用">
+          <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true">
+            <line x1="6" y1="6" x2="18" y2="18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+            <line x1="18" y1="6" x2="6" y2="18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+          </svg>
+        </button>
+      </div>
+    </div>
+
+    <!-- Date Line -->
+    <div class="date-line">
+      <button class="date-arrow" id="date-prev" aria-label="前一天">
+        <svg viewBox="0 0 16 16" width="12" height="12"><path d="M10 3L5 8L10 13" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg>
+      </button>
+      <span class="date-line-text" id="date-nav-text"></span>
+      <button class="date-arrow" id="date-next" aria-label="后一天">
+        <svg viewBox="0 0 16 16" width="12" height="12"><path d="M6 3L11 8L6 13" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg>
+      </button>
+    </div>
+
+    <!-- Calendar Dropdown -->
+    <div class="calendar-overlay hidden" id="calendar-overlay">
+      <div class="calendar">
+        <div class="cal-header">
+          <button class="cal-nav-btn" id="cal-prev" aria-label="上个月">
+            <svg viewBox="0 0 16 16" width="10" height="10"><path d="M10 3L5 8L10 13" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg>
+          </button>
+          <span class="cal-title" id="cal-title"></span>
+          <button class="cal-nav-btn" id="cal-next" aria-label="下个月">
+            <svg viewBox="0 0 16 16" width="10" height="10"><path d="M6 3L11 8L6 13" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg>
+          </button>
+        </div>
+        <div class="cal-weekdays">
+          <span>一</span><span>二</span><span>三</span><span>四</span><span>五</span><span>六</span><span>日</span>
+        </div>
+        <div class="cal-grid" id="cal-grid"></div>
+        <button class="cal-today-btn" id="date-today">回到今天</button>
+      </div>
+    </div>
+
+    <!-- Tabs -->
+    <div class="tabs" role="tablist" aria-label="待办列表">
+      <button class="tab active" data-tab="incomplete" id="tab-incomplete" role="tab" aria-selected="true" aria-controls="incomplete-panel">
+        <svg viewBox="0 0 20 20" width="16" height="16" class="tab-icon" aria-hidden="true">
+          <path d="M10 18V10" stroke="#22c55e" stroke-width="1.8" stroke-linecap="round"/>
+          <path d="M10 10C10 7 7 5.5 4 5.5C4 8.5 7 10 10 10Z" fill="#4ade80"/>
+          <path d="M10 10C10 7 13 5.5 16 5.5C16 8.5 13 10 10 10Z" fill="#22c55e"/>
+        </svg>
+        <span>待办</span>
+        <span class="tab-count" id="incomplete-count">0</span>
+      </button>
+      <button class="tab" data-tab="completed" id="tab-completed" role="tab" aria-selected="false" aria-controls="completed-panel">
+        <svg viewBox="0 0 20 20" width="16" height="16" class="tab-icon" aria-hidden="true">
+          <circle cx="10" cy="10" r="8" fill="#22c55e" opacity="0.15"/>
+          <path d="M6 10L9 13L14 7" stroke="#22c55e" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+        </svg>
+        <span>已完成</span>
+        <span class="tab-count" id="completed-count">0</span>
+      </button>
+      <div class="tab-indicator" id="tab-indicator" aria-hidden="true"></div>
+    </div>
+
+    <!-- Progress bar -->
+    <div class="progress-section" id="progress-section">
+      <div class="progress-bar">
+        <div class="progress-fill" id="progress-fill"></div>
+      </div>
+      <span class="progress-text" id="progress-text" role="status"></span>
+    </div>
+
+    <!-- Lists -->
+    <div class="lists-wrapper">
+      <div class="todo-list" id="incomplete-list" role="tabpanel" aria-labelledby="tab-incomplete"></div>
+      <div class="todo-list hidden" id="completed-list" role="tabpanel" aria-labelledby="tab-completed"></div>
+
+      <div class="empty-state" id="empty-incomplete">
+        <svg viewBox="0 0 80 100" width="80" height="100" class="empty-icon" aria-hidden="true">
+          <path d="M40 95V55" stroke="#86efac" stroke-width="3" stroke-linecap="round"/>
+          <path d="M40 55C40 40 25 32 10 32C10 47 25 55 40 55Z" fill="#bbf7d0"/>
+          <path d="M40 55C40 40 55 32 70 32C70 47 55 55 40 55Z" fill="#86efac"/>
+          <path d="M40 75C35 70 25 69 18 72" stroke="#bbf7d0" stroke-width="2" stroke-linecap="round" fill="none"/>
+          <circle cx="40" cy="22" r="8" fill="#fef08a" opacity="0.6"/>
+          <circle cx="40" cy="22" r="4" fill="#fbbf24" opacity="0.4"/>
+        </svg>
+        <p class="empty-text">今天还没有待办事项</p>
+        <p class="empty-hint">点击 + 种下第一颗种子 · 双击文字可编辑</p>
+      </div>
+      <div class="empty-state hidden" id="empty-completed">
+        <svg viewBox="0 0 80 80" width="70" height="70" class="empty-icon" aria-hidden="true">
+          <circle cx="40" cy="40" r="30" fill="none" stroke="currentColor" stroke-width="2" opacity="0.15"/>
+          <path d="M25 40L35 50L55 30" stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round" fill="none" opacity="0.2"/>
+        </svg>
+        <p class="empty-text">还没有已完成的任务</p>
+        <p class="empty-hint">完成一个待办就能看到花朵绽放</p>
+      </div>
+    </div>
+
+    <!-- Add button -->
+    <!-- Calendar FAB (bottom-left) -->
+    <button class="fab-btn cal-fab" id="cal-btn" title="日历" aria-label="打开日历">
+      <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+        <rect x="3" y="4" width="18" height="18" rx="2.5" stroke="currentColor" stroke-width="1.8" fill="none"/>
+        <line x1="16" y1="2" x2="16" y2="6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+        <line x1="8" y1="2" x2="8" y2="6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+        <line x1="3" y1="10" x2="21" y2="10" stroke="currentColor" stroke-width="1.5"/>
+      </svg>
+      <span>日历</span>
+    </button>
+
+    <!-- Clipboard FAB (next to calendar) -->
+    <button class="fab-btn clip-fab" id="clip-btn" title="剪贴板" aria-label="打开剪贴板">
+      <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+        <path d="M16 4h2a2 2 0 012 2v14a2 2 0 01-2 2H6a2 2 0 01-2-2V6a2 2 0 012-2h2" stroke="currentColor" stroke-width="1.8" fill="none" stroke-linecap="round"/>
+        <rect x="8" y="2" width="8" height="4" rx="1" stroke="currentColor" stroke-width="1.8" fill="none"/>
+        <line x1="8" y1="11" x2="16" y2="11" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+        <line x1="8" y1="15" x2="13" y2="15" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+      </svg>
+      <span>收藏</span>
+    </button>
+
+    <!-- Clipboard Panel -->
+    <div class="clip-panel hidden" id="clip-panel">
+      <div class="clip-header">
+        <span class="clip-title">剪贴板</span>
+        <button class="clip-close" id="clip-close" aria-label="关闭">
+          <svg viewBox="0 0 16 16" width="12" height="12"><line x1="4" y1="4" x2="12" y2="12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><line x1="12" y1="4" x2="4" y2="12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+        </button>
+      </div>
+      <div class="clip-add-row">
+        <input type="text" class="clip-input" id="clip-input" placeholder="添加到剪贴板..." maxlength="500">
+        <button class="clip-add-btn" id="clip-add-btn">添加</button>
+      </div>
+      <div class="clip-list" id="clip-list"></div>
+      <div class="clip-empty hidden" id="clip-empty">
+        <span>还没有保存的内容</span>
+      </div>
+    </div>
+
+    <!-- Add FAB (bottom-right) -->
+    <button class="fab-btn add-fab" id="add-btn" title="新建待办 (N)" aria-label="新建待办">
+      <svg viewBox="0 0 24 24" width="28" height="28" aria-hidden="true">
+        <line x1="12" y1="5" x2="12" y2="19" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/>
+        <line x1="5" y1="12" x2="19" y2="12" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/>
+      </svg>
+    </button>
+
+    <!-- Add modal -->
+    <div class="modal-overlay hidden" id="modal-overlay" role="dialog" aria-modal="true" aria-label="新建待办">
+      <div class="modal">
+        <div class="modal-header">
+          <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
+            <path d="M12 22V12" stroke="#22c55e" stroke-width="2" stroke-linecap="round"/>
+            <path d="M12 12C12 8 8 6 4 6C4 10 8 12 12 12Z" fill="#4ade80"/>
+            <path d="M12 12C12 8 16 6 20 6C20 10 16 12 12 12Z" fill="#22c55e"/>
+          </svg>
+          <span>种下一颗种子</span>
+        </div>
+        <input type="text" class="modal-input" id="todo-input" placeholder="今天要做什么？" maxlength="200" autofocus>
+        <div class="modal-actions">
+          <button class="modal-btn cancel-btn" id="cancel-btn">取消</button>
+          <button class="modal-btn confirm-btn" id="confirm-btn">
+            <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
+              <path d="M4 8L7 11L12 5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+            </svg>
+            种下它
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Delete confirmation -->
+    <div class="modal-overlay hidden" id="delete-overlay" role="alertdialog" aria-modal="true" aria-label="确认删除">
+      <div class="modal">
+        <div class="modal-header">
+          <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
+            <circle cx="12" cy="12" r="10" stroke="#ef4444" stroke-width="1.5" fill="none" opacity="0.3"/>
+            <line x1="12" y1="8" x2="12" y2="13" stroke="#ef4444" stroke-width="2" stroke-linecap="round"/>
+            <circle cx="12" cy="16" r="1" fill="#ef4444"/>
+          </svg>
+          <span>确认删除</span>
+        </div>
+        <p class="delete-msg">确定要删除这个任务吗？此操作无法撤销。</p>
+        <div class="modal-actions">
+          <button class="modal-btn cancel-btn" id="delete-cancel-btn">取消</button>
+          <button class="modal-btn delete-confirm-btn" id="delete-confirm-btn">删除</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Celebration overlay -->
+    <div class="celebration-container" id="celebration-container" aria-hidden="true"></div>
+    <!-- Screen reader announcements -->
+    <div id="aria-announcer" class="sr-only" aria-live="polite" aria-atomic="true"></div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
