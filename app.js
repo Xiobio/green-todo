@@ -204,9 +204,10 @@ class GreenTodo {
   checkDateChange() {
     const newKey = this.getTodayKey();
     if (newKey !== this._currentDateKey) {
+      const oldKey = this._currentDateKey;
       this._currentDateKey = newKey;
-      // Auto-navigate to today if we were on the previous "today"
-      if (this.selectedDate === this._currentDateKey) {
+      // Auto-navigate to today if user was viewing the previous "today"
+      if (this.selectedDate === oldKey) {
         this.selectedDate = newKey;
       }
       this.setDateAndGreeting();
@@ -305,7 +306,8 @@ class GreenTodo {
 
     // Keyboard shortcuts
     document.addEventListener('keydown', (e) => {
-      if (this.modalOverlay.classList.contains('hidden') && this.deleteOverlay.classList.contains('hidden')) {
+      const inInput = document.activeElement && (document.activeElement.tagName === 'INPUT' || document.activeElement.tagName === 'TEXTAREA');
+      if (!inInput && this.modalOverlay.classList.contains('hidden') && this.deleteOverlay.classList.contains('hidden')) {
         if (e.key === 'n' || e.key === 'N') { e.preventDefault(); this.showModal(); }
         if (e.key === 'i' || e.key === 'I') { e.preventDefault(); this.importTodos(); }
         if (e.key === '1') this.switchTab('incomplete');
@@ -320,8 +322,12 @@ class GreenTodo {
         }
       }
       if (e.key === 'Escape') {
+        const clipPanel = document.getElementById('clip-panel');
+        const calOverlay = document.getElementById('calendar-overlay');
         if (!this.deleteOverlay.classList.contains('hidden')) this.hideDeleteConfirm();
         else if (!this.modalOverlay.classList.contains('hidden')) this.hideModal();
+        else if (!clipPanel.classList.contains('hidden')) clipPanel.classList.add('hidden');
+        else if (!calOverlay.classList.contains('hidden')) this.hideCalendar();
         else if (window.electronAPI) window.electronAPI.hideWindow();
       }
     });
@@ -365,7 +371,7 @@ class GreenTodo {
     cutoff.setDate(cutoff.getDate() - days);
     const cutoffKey = `${cutoff.getFullYear()}-${String(cutoff.getMonth()+1).padStart(2,'0')}-${String(cutoff.getDate()).padStart(2,'0')}`;
     const before = this.todos.length;
-    this.todos = this.todos.filter(t => !t.completed || t.date >= cutoffKey);
+    this.todos = this.todos.filter(t => t.date >= cutoffKey);
     if (this.todos.length !== before) this.saveTodos();
   }
 
@@ -532,7 +538,7 @@ class GreenTodo {
     text = text.trim();
     if (!text) return;
     if (text.length > 200) text = text.substring(0, 200);
-    if (this.getIncompleteTodos().length >= MAX_TODOS) return;
+    if (this.todos.length >= MAX_TODOS) return;
 
     const todo = {
       id: Date.now().toString(36) + Math.random().toString(36).slice(2, 7),
@@ -665,9 +671,11 @@ class GreenTodo {
       if (!this.dragItem || el.dataset.id === this.dragItem) return;
       const incTodos = this.getIncompleteTodos();
       const fromIdx = incTodos.findIndex(t => t.id === this.dragItem);
-      const toIdx = incTodos.findIndex(t => t.id === el.dataset.id);
+      let toIdx = incTodos.findIndex(t => t.id === el.dataset.id);
       if (fromIdx === -1 || toIdx === -1) return;
       const [moved] = incTodos.splice(fromIdx, 1);
+      // After splice, indices shift if dragging downward
+      if (fromIdx < toIdx) toIdx--;
       incTodos.splice(toIdx, 0, moved);
       incTodos.forEach((t, i) => { const todo = this.todos.find(x => x.id === t.id); if (todo) todo.order = i; });
       this.saveTodos();
