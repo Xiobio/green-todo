@@ -54,6 +54,8 @@
 .dark .tabs { background: var(--border); }
 .dark .tab-indicator { background: var(--surface); box-shadow: 0 1px 4px rgba(0,0,0,0.3); }
 .dark .tab.active .tab-count { background: var(--green-600); }
+.dark .calendar-overlay { background: rgba(0, 0, 0, 0.35); }
+.dark .modal-overlay { background: rgba(0, 0, 0, 0.35); }
 .dark .modal-input { background: var(--bg); }
 .dark .modal-input:focus { background: var(--surface); }
 .dark .close-btn:hover { background: var(--danger-bg); }
@@ -679,6 +681,7 @@ body {
   gap: 6px;
   padding: 10px 14px 12px;
   z-index: 20;
+  background: linear-gradient(to top, var(--bg) 75%, transparent);
 }
 
 /* Shared pill style */
@@ -986,6 +989,8 @@ body {
 
 .confirm-btn { background: var(--green-500); color: white; }
 .confirm-btn:hover { background: var(--green-600); }
+.confirm-btn:disabled { background: var(--border); color: var(--text-muted); cursor: not-allowed; opacity: 0.6; }
+.confirm-btn:disabled:hover { background: var(--border); }
 
 .delete-msg { font-size: 13px; color: var(--text-secondary); line-height: 1.5; margin-bottom: 4px; }
 .delete-confirm-btn { background: var(--danger); color: white; }

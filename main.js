@@ -214,6 +214,7 @@ app.whenReady().then(() => {
   if (!registerHotkey(savedKey)) {
     registerHotkey('Ctrl+Alt+T');
   }
+  if (tray) tray.setToolTip(`Green Todo - ${currentHotkey || savedKey}`);
 });
 
 ipcMain.handle('get-hotkey', () => currentHotkey || 'Ctrl+Space');

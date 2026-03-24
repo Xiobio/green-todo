@@ -276,6 +276,12 @@ class GreenTodo {
     document.getElementById('clip-input').addEventListener('keydown', (e) => {
       if (e.key === 'Enter') { e.preventDefault(); this.addClipItem(); }
     });
+    document.addEventListener('click', (e) => {
+      const panel = document.getElementById('clip-panel');
+      if (!panel.classList.contains('hidden') && !panel.contains(e.target) && !e.target.closest('#clip-btn')) {
+        panel.classList.add('hidden');
+      }
+    });
 
     this.tabIncomplete.addEventListener('click', () => this.switchTab('incomplete'));
     this.tabCompleted.addEventListener('click', () => this.switchTab('completed'));
@@ -288,7 +294,7 @@ class GreenTodo {
       if (e.key === 'Escape') this.hideModal();
     });
     this.hideBtn.addEventListener('click', () => { if (window.electronAPI) window.electronAPI.hideWindow(); });
-    this.closeBtn.addEventListener('click', () => { if (window.electronAPI) window.electronAPI.quitApp(); });
+    this.closeBtn.addEventListener('click', () => { if (window.electronAPI) window.electronAPI.hideWindow(); });
     this.themeBtn.addEventListener('click', () => this.toggleTheme());
     document.getElementById('export-btn').addEventListener('click', () => this.exportTodos());
     if (window.electronAPI.onTriggerExport) window.electronAPI.onTriggerExport(() => this.exportTodos());
@@ -340,11 +346,11 @@ class GreenTodo {
         const calOverlay = document.getElementById('calendar-overlay');
         const hotkeyOverlay = document.getElementById('hotkey-overlay');
         if (!hotkeyOverlay.classList.contains('hidden')) { this.closeHotkeyRecorder(); return; }
-        if (!this.deleteOverlay.classList.contains('hidden')) this.hideDeleteConfirm();
-        else if (!this.modalOverlay.classList.contains('hidden')) this.hideModal();
-        else if (!clipPanel.classList.contains('hidden')) clipPanel.classList.add('hidden');
-        else if (!calOverlay.classList.contains('hidden')) this.hideCalendar();
-        else if (window.electronAPI) window.electronAPI.hideWindow();
+        if (!this.deleteOverlay.classList.contains('hidden')) { this.hideDeleteConfirm(); return; }
+        if (!this.modalOverlay.classList.contains('hidden')) { this.hideModal(); return; }
+        if (!clipPanel.classList.contains('hidden')) { clipPanel.classList.add('hidden'); return; }
+        if (!calOverlay.classList.contains('hidden')) { this.hideCalendar(); return; }
+        if (window.electronAPI) window.electronAPI.hideWindow();
       }
     });
   }
@@ -1043,7 +1049,7 @@ class GreenTodo {
     input.addEventListener('blur', commit);
     input.addEventListener('keydown', (e) => {
       if (e.key === 'Enter') { e.preventDefault(); input.blur(); }
-      if (e.key === 'Escape') { input.value = todo.text; input.blur(); }
+      if (e.key === 'Escape') { e.stopPropagation(); input.value = todo.text; input.blur(); }
     });
   }
 
@@ -1084,6 +1090,7 @@ class GreenTodo {
     const key = await window.electronAPI.getHotkey();
     this._currentHotkey = key;
     document.getElementById('hotkey-text').textContent = key;
+    document.getElementById('hide-btn').title = `隐藏 (${key})`;
   }
 
   openHotkeyRecorder() {
@@ -1134,6 +1141,7 @@ class GreenTodo {
     if (result.success) {
       this._currentHotkey = result.hotkey;
       document.getElementById('hotkey-text').textContent = result.hotkey;
+      document.getElementById('hide-btn').title = `隐藏 (${result.hotkey})`;
       this.announce(`快捷键已设为 ${result.hotkey}`);
     } else {
       this.announce('快捷键设置失败，可能被其他程序占用');
