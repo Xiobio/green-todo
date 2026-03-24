@@ -9,6 +9,34 @@ if (!gotLock) { app.quit(); }
 let mainWindow = null;
 let tray = null;
 let isFirstLaunch = true;
+let currentHotkey = null;
+
+// ---- Config persistence ----
+const configPath = path.join(app.getPath('userData'), 'green-todo-config.json');
+
+function loadConfig() {
+  try { return JSON.parse(fs.readFileSync(configPath, 'utf-8')); } catch { return {}; }
+}
+
+function saveConfig(cfg) {
+  try { fs.writeFileSync(configPath, JSON.stringify(cfg, null, 2)); } catch {}
+}
+
+function registerHotkey(accelerator) {
+  if (currentHotkey) {
+    globalShortcut.unregister(currentHotkey);
+  }
+  const ok = globalShortcut.register(accelerator, toggleWindow);
+  if (ok) {
+    currentHotkey = accelerator;
+    return true;
+  }
+  // Fallback: try to re-register the old one
+  if (currentHotkey && currentHotkey !== accelerator) {
+    globalShortcut.register(currentHotkey, toggleWindow);
+  }
+  return false;
+}
 
 app.on('second-instance', () => {
   if (mainWindow) {
@@ -180,10 +208,25 @@ function toggleWindow() {
 app.whenReady().then(() => {
   createWindow();
   try { createTray(); } catch (e) { console.error('Tray creation failed:', e); }
-  const registered = globalShortcut.register('Ctrl+Space', toggleWindow);
-  if (!registered) {
-    globalShortcut.register('Ctrl+Alt+T', toggleWindow);
+  // Load saved hotkey or use default
+  const cfg = loadConfig();
+  const savedKey = cfg.hotkey || 'Ctrl+Space';
+  if (!registerHotkey(savedKey)) {
+    registerHotkey('Ctrl+Alt+T');
   }
+});
+
+ipcMain.handle('get-hotkey', () => currentHotkey || 'Ctrl+Space');
+
+ipcMain.handle('set-hotkey', (_e, newKey) => {
+  const ok = registerHotkey(newKey);
+  if (ok) {
+    const cfg = loadConfig();
+    cfg.hotkey = newKey;
+    saveConfig(cfg);
+    if (tray) tray.setToolTip(`Green Todo - ${newKey}`);
+  }
+  return { success: ok, hotkey: currentHotkey };
 });
 
 ipcMain.on('hide-window', () => {

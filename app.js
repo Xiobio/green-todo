@@ -40,6 +40,7 @@ class GreenTodo {
     this.bindEvents();
     this.render();
     this.startDateWatcher();
+    this.initHotkey();
   }
 
   cacheDom() {
@@ -89,7 +90,12 @@ class GreenTodo {
     const days = ['周日','周一','周二','周三','周四','周五','周六'];
     const label = `${d.getFullYear()}年${d.getMonth()+1}月${d.getDate()}日 ${days[d.getDay()]}`;
     const isToday = this.selectedDate === this.getTodayKey();
-    document.getElementById('date-nav-text').textContent = isToday ? `今天 · ${label}` : label;
+    const navEl = document.getElementById('date-nav-text');
+    if (isToday) {
+      navEl.innerHTML = `<span class="date-today-tag">今天</span> <span class="date-detail">· ${label}</span>`;
+    } else {
+      navEl.innerHTML = `<span class="date-detail">${label}</span>`;
+    }
     document.getElementById('date-today').classList.toggle('hidden', isToday);
   }
 
@@ -255,6 +261,14 @@ class GreenTodo {
       if (e.target.id === 'calendar-overlay') this.hideCalendar();
     });
 
+    // Hotkey settings
+    document.getElementById('hotkey-badge').addEventListener('click', () => this.openHotkeyRecorder());
+    document.getElementById('hotkey-cancel').addEventListener('click', () => this.closeHotkeyRecorder());
+    document.getElementById('hotkey-confirm').addEventListener('click', () => this.confirmHotkey());
+    document.getElementById('hotkey-overlay').addEventListener('click', (e) => {
+      if (e.target.id === 'hotkey-overlay') this.closeHotkeyRecorder();
+    });
+
     // Clipboard
     document.getElementById('clip-btn').addEventListener('click', () => this.toggleClipPanel());
     document.getElementById('clip-close').addEventListener('click', () => document.getElementById('clip-panel').classList.add('hidden'));
@@ -324,6 +338,8 @@ class GreenTodo {
       if (e.key === 'Escape') {
         const clipPanel = document.getElementById('clip-panel');
         const calOverlay = document.getElementById('calendar-overlay');
+        const hotkeyOverlay = document.getElementById('hotkey-overlay');
+        if (!hotkeyOverlay.classList.contains('hidden')) { this.closeHotkeyRecorder(); return; }
         if (!this.deleteOverlay.classList.contains('hidden')) this.hideDeleteConfirm();
         else if (!this.modalOverlay.classList.contains('hidden')) this.hideModal();
         else if (!clipPanel.classList.contains('hidden')) clipPanel.classList.add('hidden');
@@ -1060,6 +1076,69 @@ class GreenTodo {
       this.render();
       this.announce(`已导入 ${added} 条待办`);
     } catch { this.announce('导入失败：文件解析错误'); }
+  }
+
+  // ---- Hotkey Settings ----
+  async initHotkey() {
+    if (!window.electronAPI || !window.electronAPI.getHotkey) return;
+    const key = await window.electronAPI.getHotkey();
+    this._currentHotkey = key;
+    document.getElementById('hotkey-text').textContent = key;
+  }
+
+  openHotkeyRecorder() {
+    const overlay = document.getElementById('hotkey-overlay');
+    const recorder = document.getElementById('hotkey-recorder');
+    const confirmBtn = document.getElementById('hotkey-confirm');
+    overlay.classList.remove('hidden');
+    recorder.textContent = '等待输入...';
+    recorder.classList.add('recording');
+    confirmBtn.disabled = true;
+    this._pendingHotkey = null;
+
+    this._hotkeyHandler = (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const parts = [];
+      if (e.ctrlKey) parts.push('Ctrl');
+      if (e.altKey) parts.push('Alt');
+      if (e.shiftKey) parts.push('Shift');
+      if (e.metaKey) parts.push('Meta');
+      const key = e.key;
+      if (!['Control', 'Alt', 'Shift', 'Meta'].includes(key)) {
+        parts.push(key === ' ' ? 'Space' : key.length === 1 ? key.toUpperCase() : key);
+      }
+      if (parts.length >= 2 && !['Control', 'Alt', 'Shift', 'Meta'].includes(e.key)) {
+        const combo = parts.join('+');
+        recorder.textContent = combo;
+        this._pendingHotkey = combo;
+        confirmBtn.disabled = false;
+      }
+    };
+    document.addEventListener('keydown', this._hotkeyHandler, true);
+  }
+
+  closeHotkeyRecorder() {
+    document.getElementById('hotkey-overlay').classList.add('hidden');
+    document.getElementById('hotkey-recorder').classList.remove('recording');
+    if (this._hotkeyHandler) {
+      document.removeEventListener('keydown', this._hotkeyHandler, true);
+      this._hotkeyHandler = null;
+    }
+    this._pendingHotkey = null;
+  }
+
+  async confirmHotkey() {
+    if (!this._pendingHotkey || !window.electronAPI) return;
+    const result = await window.electronAPI.setHotkey(this._pendingHotkey);
+    if (result.success) {
+      this._currentHotkey = result.hotkey;
+      document.getElementById('hotkey-text').textContent = result.hotkey;
+      this.announce(`快捷键已设为 ${result.hotkey}`);
+    } else {
+      this.announce('快捷键设置失败，可能被其他程序占用');
+    }
+    this.closeHotkeyRecorder();
   }
 
   // ---- Clipboard ----
