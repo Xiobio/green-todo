@@ -6,6 +6,18 @@
 ![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20macOS%20%7C%20Linux-green)
 ![License](https://img.shields.io/badge/License-MIT-blue)
 
+## 下载安装
+
+从 [GitHub Releases](https://github.com/Xiobio/green-todo/releases/tag/v1.0.0) 下载：
+
+| 平台 | 文件 | 说明 |
+|------|------|------|
+| **Windows** | `Green Todo Setup 1.0.0.exe` | 双击安装，自动创建桌面快捷方式 |
+| **Windows** | `GreenTodo-Portable-1.0.0.exe` | 免安装版，双击直接运行 |
+| **macOS** | `Green Todo-1.0.0.dmg` | 拖入 Applications 即可 |
+
+> 首次启动后按 **Ctrl+Space**（可自定义）呼出窗口，关闭窗口会最小化到系统托盘。
+
 ## 特性
 
 ### 核心功能
