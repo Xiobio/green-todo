@@ -130,6 +130,8 @@ function encodePNG(w, h, rgba) {
 }
 
 const png = encodePNG(size, size, pixels);
-const outPath = path.join(__dirname, 'build', 'icon.png');
+const buildDir = path.join(__dirname, 'build');
+if (!fs.existsSync(buildDir)) fs.mkdirSync(buildDir, { recursive: true });
+const outPath = path.join(buildDir, 'icon.png');
 fs.writeFileSync(outPath, png);
 console.log(`Icon generated: ${outPath} (${png.length} bytes)`);
