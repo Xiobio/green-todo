@@ -3,12 +3,12 @@ const { deflateSync } = require('zlib');
 const fs = require('fs');
 const path = require('path');
 
-const size = 256;
+const size = 512;
 const pixels = Buffer.alloc(size * size * 4);
 const cx = size / 2, cy = size / 2;
 
 // Background circle (green)
-const bgR = 100;
+const bgR = 200;
 for (let y = 0; y < size; y++) {
   for (let x = 0; x < size; x++) {
     const dx = x - cx, dy = y - cy;
@@ -34,7 +34,7 @@ for (let y = 0; y < size; y++) {
 }
 
 // Yellow flower center
-const fcx = cx, fcy = cy - 15, fr = 22;
+const fcx = cx, fcy = cy - 30, fr = 44;
 for (let y = 0; y < size; y++) {
   for (let x = 0; x < size; x++) {
     const dx = x - fcx, dy = y - fcy;
@@ -70,7 +70,7 @@ function drawEllipse(ecx, ecy, rx, ry, r, g, b, alpha) {
 }
 
 // 5 petals
-const petalR = 28, petalDist = 35;
+const petalR = 56, petalDist = 70;
 for (let i = 0; i < 5; i++) {
   const angle = (i * 72 - 90) * Math.PI / 180;
   const px = fcx + Math.cos(angle) * petalDist;
@@ -80,13 +80,13 @@ for (let i = 0; i < 5; i++) {
 }
 
 // Stem
-for (let y = Math.round(fcy + fr); y < cy + 80; y++) {
-  for (let dx = -3; dx <= 3; dx++) {
+for (let y = Math.round(fcy + fr); y < cy + 160; y++) {
+  for (let dx = -6; dx <= 6; dx++) {
     const x = Math.round(cx + dx);
     if (x >= 0 && x < size && y >= 0 && y < size) {
       const idx = (y * size + x) * 4;
       const dist = Math.abs(dx);
-      if (dist <= 2) {
+      if (dist <= 4) {
         pixels[idx] = 21; pixels[idx + 1] = 128; pixels[idx + 2] = 61; pixels[idx + 3] = 255;
       }
     }
