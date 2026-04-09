@@ -1,6 +1,7 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('electronAPI', {
+  platform: process.platform,
   hideWindow: () => ipcRenderer.send('hide-window'),
   quitApp: () => ipcRenderer.send('app-quit'),
   toggleAlwaysOnTop: () => ipcRenderer.send('toggle-always-on-top'),

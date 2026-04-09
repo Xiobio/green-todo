@@ -2,6 +2,22 @@ const { app, BrowserWindow, globalShortcut, ipcMain, Tray, Menu, nativeImage, di
 const path = require('path');
 const fs = require('fs');
 
+const IS_MAC = process.platform === 'darwin';
+
+// Startup tracing — set GREEN_TODO_TRACE=1 to enable.
+const trace = process.env.GREEN_TODO_TRACE
+  ? (() => {
+      const T0 = Date.now();
+      const logPath = path.join(require('os').homedir(), 'greentodo-startup.log');
+      let buf = `START ${new Date().toISOString()} pid=${process.pid}\n`;
+      return (label) => {
+        buf += `${Date.now() - T0}ms ${label}\n`;
+        try { fs.writeFileSync(logPath, buf); } catch {}
+      };
+    })()
+  : () => {};
+trace('main.js:loaded');
+
 // 单实例锁 — 同时只能运行一个
 const gotLock = app.requestSingleInstanceLock();
 if (!gotLock) { app.quit(); }
@@ -46,34 +62,54 @@ app.on('second-instance', () => {
 });
 
 function createWindow() {
-  mainWindow = new BrowserWindow({
+  trace('createWindow:start');
+  const windowOpts = {
     width: 440,
     height: 680,
     frame: false,
-    transparent: true,
     resizable: false,
     alwaysOnTop: true,
     show: false,
-    skipTaskbar: false,
-    icon: createTrayIcon(),
+    skipTaskbar: true,
+    backgroundColor: '#00000000',
+    icon: IS_MAC ? undefined : createTrayIcon(),
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       nodeIntegration: false,
       contextIsolation: true,
       sandbox: true,
+      backgroundThrottling: false,
     }
-  });
+  };
+  if (IS_MAC) {
+    // vibrancy REPLACES transparent on macOS — they are mutually exclusive.
+    windowOpts.vibrancy = 'under-window';
+  } else {
+    windowOpts.transparent = true;
+  }
+  mainWindow = new BrowserWindow(windowOpts);
+  trace('BrowserWindow:created');
 
+  if (process.env.GREEN_TODO_TRACE) {
+    mainWindow.webContents.on('dom-ready', () => trace('wc:dom-ready'));
+    mainWindow.webContents.on('did-finish-load', () => trace('wc:did-finish-load'));
+    mainWindow.on('show', () => trace('win:show'));
+  }
   mainWindow.loadFile('index.html');
 
+  if (IS_MAC) {
+    mainWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+  }
+
   mainWindow.once('ready-to-show', () => {
+    trace('ready-to-show');
     if (isFirstLaunch) {
       isFirstLaunch = false;
       centerAndShow();
+      trace('first-show');
     }
   });
 
-  // Close button hides to tray instead of quitting
   mainWindow.on('close', (e) => {
     if (!app.isQuitting) {
       e.preventDefault();
@@ -84,6 +120,61 @@ function createWindow() {
   mainWindow.on('closed', () => {
     mainWindow = null;
   });
+}
+
+// macOS menu bar template icon: pure alpha (black), auto-adapts to light/dark.
+// '#' = opaque, '.' = transparent.
+const SPROUT_16 = [
+  '................',
+  '................',
+  '.##..........##.',
+  '####........####',
+  '######....######',
+  '.##############.',
+  '..############..',
+  '...##########...',
+  '....########....',
+  '.......##.......',
+  '.......##.......',
+  '.......##.......',
+  '.......##.......',
+  '......####......',
+  '................',
+  '................',
+];
+
+function pixelsFromRows(rows) {
+  const h = rows.length;
+  const w = rows[0].length;
+  const pixels = Buffer.alloc(w * h * 4);
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      if (rows[y][x] === '#') {
+        pixels[(y * w + x) * 4 + 3] = 255;
+      }
+    }
+  }
+  return { w, h, pixels };
+}
+
+function scale2x(rows) {
+  const out = [];
+  for (const row of rows) {
+    const doubled = row.split('').map(c => c + c).join('');
+    out.push(doubled, doubled);
+  }
+  return out;
+}
+
+function createMacTrayIcon() {
+  const { w: w1, h: h1, pixels: p1 } = pixelsFromRows(SPROUT_16);
+  const { w: w2, h: h2, pixels: p2 } = pixelsFromRows(scale2x(SPROUT_16));
+  const png16 = encodePNG(w1, h1, p1);
+  const png32 = encodePNG(w2, h2, p2);
+  const img = nativeImage.createFromBuffer(png16, { scaleFactor: 1 });
+  img.addRepresentation({ scaleFactor: 2, buffer: png32 });
+  img.setTemplateImage(true);
+  return img;
 }
 
 function createTrayIcon() {
@@ -166,7 +257,7 @@ function encodePNG(w, h, rgba) {
 }
 
 function createTray() {
-  const icon = createTrayIcon();
+  const icon = IS_MAC ? createMacTrayIcon() : createTrayIcon();
   tray = new Tray(icon);
   tray.setToolTip('Green Todo - Ctrl+Space');
   tray.setContextMenu(Menu.buildFromTemplate([
@@ -193,6 +284,9 @@ function centerAndShow() {
     Math.round(dy + (height - winHeight) / 2)
   );
   mainWindow.show();
+  if (IS_MAC) {
+    app.focus({ steal: true });
+  }
   mainWindow.focus();
 }
 
@@ -206,13 +300,18 @@ function toggleWindow() {
 }
 
 app.whenReady().then(() => {
+  trace('app:ready');
+  // LSUIElement in Info.plist hides Dock at launch; dock.hide() covers runtime relaunch.
+  if (IS_MAC && app.dock) {
+    app.dock.hide();
+  }
+
   createWindow();
   try { createTray(); } catch (e) { console.error('Tray creation failed:', e); }
-  // Load saved hotkey or use default
   const cfg = loadConfig();
   const savedKey = cfg.hotkey || 'Ctrl+Space';
   if (!registerHotkey(savedKey)) {
-    registerHotkey('Ctrl+Alt+T');
+    registerHotkey(IS_MAC ? 'Cmd+Alt+T' : 'Ctrl+Alt+T');
   }
   if (tray) tray.setToolTip(`Green Todo - ${currentHotkey || savedKey}`);
 });
@@ -247,7 +346,6 @@ ipcMain.on('toggle-always-on-top', () => {
   }
 });
 
-// Export data handler
 ipcMain.handle('export-data', async (_event, jsonString) => {
   const { canceled, filePath } = await dialog.showSaveDialog(mainWindow, {
     title: '导出待办数据',
@@ -263,7 +361,6 @@ ipcMain.handle('export-data', async (_event, jsonString) => {
   }
 });
 
-// Import data handler
 ipcMain.handle('import-data', async () => {
   const { canceled, filePaths } = await dialog.showOpenDialog(mainWindow, {
     title: '导入待办数据',
@@ -284,5 +381,5 @@ app.on('will-quit', () => {
 });
 
 app.on('window-all-closed', () => {
-  // Don't quit — keep tray alive
+  // Keep tray alive — do not quit.
 });

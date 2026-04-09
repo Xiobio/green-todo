@@ -4,6 +4,13 @@
    combo system, physics confetti, sound, a11y
    ============================================ */
 
+// Tag platform for CSS (vibrancy bg on macOS, etc.). Runs before class instantiation.
+try {
+  if (window.electronAPI && window.electronAPI.platform) {
+    document.documentElement.setAttribute('data-platform', window.electronAPI.platform);
+  }
+} catch {}
+
 const COMBO_WINDOW_MS = 5000;
 const COMPLETION_DELAY_MS = 2000;
 const MAX_TODOS = 500;

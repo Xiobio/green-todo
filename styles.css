@@ -88,6 +88,18 @@ body {
   overflow: hidden;
 }
 
+/* macOS: use the system vibrancy backdrop instead of a solid tint.
+   The OS-level blur gives a proper native feel; we tint with low-alpha green. */
+[data-platform="darwin"] .app-container {
+  background: rgba(247, 253, 247, 0.72);
+  border: 0.5px solid rgba(20, 83, 45, 0.12);
+  box-shadow: none; /* native window shadow from BrowserWindow hasShadow */
+}
+[data-platform="darwin"] .app-container.dark {
+  background: rgba(15, 26, 15, 0.72);
+  border-color: rgba(134, 239, 172, 0.08);
+}
+
 /* ---- Background Decorations ---- */
 .bg-decorations {
   position: absolute;
