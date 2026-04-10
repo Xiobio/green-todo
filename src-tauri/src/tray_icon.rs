@@ -7,26 +7,26 @@ pub struct PetState {
     pub plant: &'static str,
     pub eyes: &'static str,
     pub mouth: &'static str,
-    pub blush: bool,
-    pub zzz: bool,
+    pub _blush: bool,
+    pub _zzz: bool,
 }
 
 pub const PET_STATES: &[PetState] = &[
-    PetState { id: "sleep_normal",   plant: "seed",    eyes: "closed",   mouth: "none",   blush: true,  zzz: false },
-    PetState { id: "sleep_zzz",      plant: "seed",    eyes: "closed",   mouth: "none",   blush: true,  zzz: true },
-    PetState { id: "tired_droopy",   plant: "sprout",  eyes: "half",     mouth: "frown",  blush: false, zzz: false },
-    PetState { id: "tired_yawn",     plant: "sprout",  eyes: "closed",   mouth: "O",      blush: false, zzz: false },
-    PetState { id: "meh_blink",      plant: "twoLeaf", eyes: "wink",     mouth: "line",   blush: false, zzz: false },
-    PetState { id: "meh_normal",     plant: "twoLeaf", eyes: "dot",      mouth: "line",   blush: false, zzz: false },
-    PetState { id: "okay_normal",    plant: "twoLeaf", eyes: "dot",      mouth: "smile",  blush: false, zzz: false },
-    PetState { id: "okay_curious",   plant: "twoLeaf", eyes: "dotUp",    mouth: "o",      blush: false, zzz: false },
-    PetState { id: "happy_smile",    plant: "bigLeaf", eyes: "arc",      mouth: "smile",  blush: true,  zzz: false },
-    PetState { id: "happy_tongue",   plant: "bigLeaf", eyes: "arc",      mouth: "tongue", blush: true,  zzz: false },
-    PetState { id: "happy_wink",     plant: "bigLeaf", eyes: "winkHappy",mouth: "grin",   blush: true,  zzz: false },
-    PetState { id: "excited_sparkle",plant: "bud",     eyes: "big",      mouth: "grin",   blush: true,  zzz: false },
-    PetState { id: "excited_star",   plant: "bud",     eyes: "star",     mouth: "grin",   blush: true,  zzz: false },
-    PetState { id: "celebrate_wow",  plant: "flower",  eyes: "huge",     mouth: "huge",   blush: true,  zzz: false },
-    PetState { id: "celebrate_love", plant: "flower",  eyes: "heart",    mouth: "huge",   blush: true,  zzz: false },
+    PetState { id: "sleep_normal",   plant: "seed",    eyes: "closed",   mouth: "none",   _blush: true,  _zzz: false },
+    PetState { id: "sleep_zzz",      plant: "seed",    eyes: "closed",   mouth: "none",   _blush: true,  _zzz: true },
+    PetState { id: "tired_droopy",   plant: "sprout",  eyes: "half",     mouth: "frown",  _blush: false, _zzz: false },
+    PetState { id: "tired_yawn",     plant: "sprout",  eyes: "closed",   mouth: "O",      _blush: false, _zzz: false },
+    PetState { id: "meh_blink",      plant: "twoLeaf", eyes: "wink",     mouth: "line",   _blush: false, _zzz: false },
+    PetState { id: "meh_normal",     plant: "twoLeaf", eyes: "dot",      mouth: "line",   _blush: false, _zzz: false },
+    PetState { id: "okay_normal",    plant: "twoLeaf", eyes: "dot",      mouth: "smile",  _blush: false, _zzz: false },
+    PetState { id: "okay_curious",   plant: "twoLeaf", eyes: "dotUp",    mouth: "o",      _blush: false, _zzz: false },
+    PetState { id: "happy_smile",    plant: "bigLeaf", eyes: "arc",      mouth: "smile",  _blush: true,  _zzz: false },
+    PetState { id: "happy_tongue",   plant: "bigLeaf", eyes: "arc",      mouth: "tongue", _blush: true,  _zzz: false },
+    PetState { id: "happy_wink",     plant: "bigLeaf", eyes: "winkHappy",mouth: "grin",   _blush: true,  _zzz: false },
+    PetState { id: "excited_sparkle",plant: "bud",     eyes: "big",      mouth: "grin",   _blush: true,  _zzz: false },
+    PetState { id: "excited_star",   plant: "bud",     eyes: "star",     mouth: "grin",   _blush: true,  _zzz: false },
+    PetState { id: "celebrate_wow",  plant: "flower",  eyes: "huge",     mouth: "huge",   _blush: true,  _zzz: false },
+    PetState { id: "celebrate_love", plant: "flower",  eyes: "heart",    mouth: "huge",   _blush: true,  _zzz: false },
 ];
 
 pub fn get_pet_state_id(total: u32, completed: u32) -> &'static str {
@@ -140,6 +140,7 @@ impl IconBuffer {
         }
     }
 
+        #[allow(dead_code)]
     pub fn erase_line(&mut self, x0: i32, x1: i32, y: i32) {
         for x in x0..=x1 { self.erase_pixel(x, y); }
     }
@@ -344,130 +345,3 @@ fn draw_mouth_small(buf: &mut IconBuffer, mouth: &str, cx: f64, m_y: f64, _k: u8
     }
 }
 
-fn draw_plant(buf: &mut IconBuffer, plant: &str, cx: f64, sb: f64, k: u8, _w: u32, _h: u32) {
-    match plant {
-        "seed" => { buf.fill_circle(cx, sb - 2.0, 3.5, k, k, k, 255); }
-        "sprout" => {
-            for y in (sb as i32 - 8)..=(sb as i32) { buf.fill_circle(cx, y as f64, 1.5, k, k, k, 255); }
-            buf.fill_circle(cx + 4.0, sb - 6.0, 3.5, k, k, k, 255);
-            buf.fill_circle(cx + 2.0, sb - 5.0, 2.5, k, k, k, 255);
-        }
-        "twoLeaf" => {
-            for y in (sb as i32 - 9)..=(sb as i32) { buf.fill_circle(cx, y as f64, 1.8, k, k, k, 255); }
-            buf.fill_circle(cx - 4.0, sb - 7.0, 3.5, k, k, k, 255); buf.fill_circle(cx - 2.0, sb - 5.0, 2.5, k, k, k, 255);
-            buf.fill_circle(cx + 4.0, sb - 7.0, 3.5, k, k, k, 255); buf.fill_circle(cx + 2.0, sb - 5.0, 2.5, k, k, k, 255);
-        }
-        "bigLeaf" => {
-            for y in (sb as i32 - 10)..=(sb as i32) { buf.fill_circle(cx, y as f64, 2.0, k, k, k, 255); }
-            buf.fill_circle(cx - 7.0, sb - 9.0, 5.0, k, k, k, 255); buf.fill_circle(cx - 4.0, sb - 6.0, 3.0, k, k, k, 255);
-            buf.fill_circle(cx + 7.0, sb - 9.0, 5.0, k, k, k, 255); buf.fill_circle(cx + 4.0, sb - 6.0, 3.0, k, k, k, 255);
-        }
-        "bud" => {
-            for y in (sb as i32 - 9)..=(sb as i32) { buf.fill_circle(cx, y as f64, 2.0, k, k, k, 255); }
-            buf.fill_circle(cx - 4.0, sb - 4.0, 3.0, k, k, k, 255); buf.fill_circle(cx + 4.0, sb - 4.0, 3.0, k, k, k, 255);
-            let bud_cy = sb - 13.0;
-            for y in 0.._h as i32 {
-                for x in 0.._w as i32 {
-                    let dx = (x as f64 + 0.5 - cx) / 4.0;
-                    let dy = (y as f64 + 0.5 - bud_cy) / 6.0;
-                    if dx * dx + dy * dy <= 1.0 { buf.set_pixel_blend(x, y, k, k, k, 255); }
-                }
-            }
-        }
-        "flower" => {
-            for y in (sb as i32 - 8)..=(sb as i32) { buf.fill_circle(cx, y as f64, 2.0, k, k, k, 255); }
-            buf.fill_circle(cx - 4.0, sb - 4.0, 3.0, k, k, k, 255); buf.fill_circle(cx + 4.0, sb - 4.0, 3.0, k, k, k, 255);
-            let fy = sb - 13.0;
-            for a in 0..5 {
-                let angle = -PI / 2.0 + (a as f64 * PI * 2.0 / 5.0);
-                buf.fill_circle(cx + angle.cos() * 7.0, fy + angle.sin() * 6.0, 4.5, k, k, k, 255);
-            }
-            buf.erase_circle(cx, fy, 3.0);
-            buf.fill_circle(cx, fy, 3.0, k, k, k, 160);
-        }
-        _ => {}
-    }
-}
-
-fn eye_arc(buf: &mut IconBuffer, ex: f64, ey: f64, dir: i32) {
-    for dx in -3i32..=3 {
-        let dy = if dx.abs() <= 1 { dir } else { 0 };
-        buf.erase_pixel(ex as i32 + dx, ey as i32 + dy);
-        buf.erase_pixel(ex as i32 + dx, ey as i32 + dy + dir);
-    }
-}
-
-fn draw_eyes(buf: &mut IconBuffer, eyes: &str, cx: f64, eye_y: f64, eye_s: f64, k: u8) {
-    match eyes {
-        "closed" => { for s in [-1.0, 1.0] { eye_arc(buf, cx + s * eye_s, eye_y, 1); } }
-        "half" => {
-            for s in [-1.0, 1.0] { buf.erase_circle(cx + s * eye_s, eye_y, 2.0); }
-        }
-        "dot" => {
-            for s in [-1.0, 1.0] { buf.erase_circle(cx + s * eye_s, eye_y, 3.5); buf.fill_circle(cx + s * eye_s, eye_y + 0.5, 1.5, k, k, k, 255); }
-        }
-        "dotUp" => {
-            for s in [-1.0, 1.0] { let ex = cx + s * eye_s; buf.erase_circle(ex, eye_y, 3.5); buf.fill_circle(ex, eye_y - 1.0, 1.5, k, k, k, 255); }
-        }
-        "wink" => {
-            buf.erase_circle(cx - eye_s, eye_y, 3.5); buf.fill_circle(cx - eye_s, eye_y + 0.5, 1.5, k, k, k, 255);
-            eye_arc(buf, cx + eye_s, eye_y, 1);
-        }
-        "winkHappy" => {
-            eye_arc(buf, cx - eye_s, eye_y, -1);
-            eye_arc(buf, cx + eye_s, eye_y, 1);
-        }
-        "arc" => { for s in [-1.0, 1.0] { eye_arc(buf, cx + s * eye_s, eye_y, -1); } }
-        "big" => {
-            for s in [-1.0, 1.0] { let ex = cx + s * eye_s;
-                buf.erase_circle(ex, eye_y, 4.5); buf.fill_circle(ex, eye_y + 0.5, 2.2, k, k, k, 255); buf.erase_circle(ex - 1.5, eye_y - 1.5, 1.0);
-            }
-        }
-        "star" => {
-            for s in [-1.0, 1.0] { let ex = cx + s * eye_s;
-                buf.erase_circle(ex, eye_y, 4.5); buf.fill_circle(ex, eye_y + 0.5, 2.2, k, k, k, 255);
-                buf.erase_circle(ex - 1.5, eye_y - 1.5, 1.2); buf.erase_circle(ex + 1.0, eye_y + 1.0, 0.8);
-            }
-        }
-        "huge" => {
-            for s in [-1.0, 1.0] { let ex = cx + s * eye_s;
-                buf.erase_circle(ex, eye_y, 5.0); buf.fill_circle(ex, eye_y + 0.5, 2.5, k, k, k, 255); buf.erase_circle(ex - 2.0, eye_y - 2.0, 1.2);
-            }
-        }
-        "heart" => {
-            for s in [-1.0, 1.0] { let ex = cx + s * eye_s;
-                buf.erase_circle(ex - 1.5, eye_y - 0.5, 2.0); buf.erase_circle(ex + 1.5, eye_y - 0.5, 2.0);
-            }
-        }
-        _ => {}
-    }
-}
-
-fn draw_mouth(buf: &mut IconBuffer, mouth: &str, cx: f64, m_y: f64, body_y: f64, body_r: f64, k: u8) {
-    match mouth {
-        "frown" => {
-            for dx in -3i32..=3 { let dy = if dx.abs() <= 1 { 0 } else { -1 }; buf.erase_pixel(cx as i32 + dx, m_y as i32 + dy); }
-        }
-        "line" => { buf.erase_line(cx as i32 - 3, cx as i32 + 3, m_y as i32); }
-        "o" => { buf.erase_circle(cx, m_y, 1.5); }
-        "O" => { buf.erase_circle(cx, m_y, 2.5); }
-        "smile" => {
-            for dx in -4i32..=4 { let dy = if dx.abs() <= 1 { 2 } else if dx.abs() <= 3 { 1 } else { 0 };
-                buf.erase_pixel(cx as i32 + dx, m_y as i32 + dy); }
-        }
-        "grin" => {
-            for dx in -5i32..=5 { let dy = if dx.abs() <= 2 { 2 } else if dx.abs() <= 4 { 1 } else { 0 };
-                buf.erase_pixel(cx as i32 + dx, m_y as i32 + dy); }
-        }
-        "tongue" => {
-            for dx in -4i32..=4 { let dy = if dx.abs() <= 1 { 2 } else if dx.abs() <= 3 { 1 } else { 0 };
-                buf.erase_pixel(cx as i32 + dx, m_y as i32 + dy); }
-            buf.fill_circle(cx, body_y + body_r + 2.0, 2.5, k, k, k, 200);
-        }
-        "huge" => {
-            for dx in -5i32..=5 { let dy = if dx.abs() <= 2 { 3 } else if dx.abs() <= 4 { 2 } else { 1 };
-                for d in 0..=dy { buf.erase_pixel(cx as i32 + dx, m_y as i32 + d); } }
-        }
-        _ => {} // "none"
-    }
-}
