@@ -27,6 +27,33 @@ let tray = null;
 let isFirstLaunch = true;
 let currentHotkey = null;
 
+// ---- Data backup persistence (protects against localStorage/LevelDB corruption) ----
+const backupPath = path.join(app.getPath('userData'), 'todos-backup.json');
+const backupTmpPath = backupPath + '.tmp';
+
+// Atomic write: write to .tmp first, then rename. Prevents half-written files.
+function saveTodosBackup(jsonString) {
+  try {
+    fs.writeFileSync(backupTmpPath, jsonString, 'utf-8');
+    fs.renameSync(backupTmpPath, backupPath);
+  } catch (e) {
+    console.error('[backup] write failed:', e.message);
+  }
+}
+
+function loadTodosBackup() {
+  try {
+    if (fs.existsSync(backupPath)) {
+      const data = fs.readFileSync(backupPath, 'utf-8');
+      const parsed = JSON.parse(data);
+      if (Array.isArray(parsed)) return data;
+    }
+  } catch (e) {
+    console.error('[backup] read failed:', e.message);
+  }
+  return null;
+}
+
 // ---- Config persistence ----
 const configPath = path.join(app.getPath('userData'), 'green-todo-config.json');
 
@@ -72,7 +99,7 @@ function createWindow() {
     show: false,
     skipTaskbar: true,
     backgroundColor: '#00000000',
-    icon: IS_MAC ? undefined : createTrayIcon(),
+    icon: IS_MAC ? undefined : createMacTrayIcon(),
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       nodeIntegration: false,
@@ -122,90 +149,319 @@ function createWindow() {
   });
 }
 
-// macOS menu bar template icon: pure alpha (black), auto-adapts to light/dark.
-// '#' = opaque, '.' = transparent.
-const SPROUT_16 = [
-  '................',
-  '................',
-  '.##..........##.',
-  '####........####',
-  '######....######',
-  '.##############.',
-  '..############..',
-  '...##########...',
-  '....########....',
-  '.......##.......',
-  '.......##.......',
-  '.......##.......',
-  '.......##.......',
-  '......####......',
-  '................',
-  '................',
-];
+// ---- Tray pet icon ----
 
-function pixelsFromRows(rows) {
-  const h = rows.length;
-  const w = rows[0].length;
-  const pixels = Buffer.alloc(w * h * 4);
-  for (let y = 0; y < h; y++) {
-    for (let x = 0; x < w; x++) {
-      if (rows[y][x] === '#') {
-        pixels[(y * w + x) * 4 + 3] = 255;
+function fillCircle(buf, W, cx, cy, r, R, G, B, A) {
+  for (let y = Math.max(0, Math.floor(cy-r-1)); y <= Math.min(Math.floor(cy+r+1), 999); y++) {
+    for (let x = Math.max(0, Math.floor(cx-r-1)); x <= Math.min(Math.floor(cx+r+1), 999); x++) {
+      if (x >= W || y*W+x >= buf.length/4) continue;
+      const d = Math.sqrt((x+0.5-cx)**2 + (y+0.5-cy)**2);
+      if (d <= r+0.8) {
+        const a = d <= r ? A : Math.round(A * Math.max(0, 1-(d-r)/0.8));
+        if (a <= 0) continue;
+        const i = (y*W+x)*4;
+        const srcA=a/255, dstA=buf[i+3]/255, outA=srcA+dstA*(1-srcA);
+        if (outA > 0) {
+          buf[i]   = Math.round((R*srcA + buf[i]  *dstA*(1-srcA)) / outA);
+          buf[i+1] = Math.round((G*srcA + buf[i+1]*dstA*(1-srcA)) / outA);
+          buf[i+2] = Math.round((B*srcA + buf[i+2]*dstA*(1-srcA)) / outA);
+          buf[i+3] = Math.round(outA * 255);
+        }
       }
     }
   }
-  return { w, h, pixels };
 }
 
-function scale2x(rows) {
-  const out = [];
-  for (const row of rows) {
-    const doubled = row.split('').map(c => c + c).join('');
-    out.push(doubled, doubled);
+function fillRoundRect(buf, W, x0, y0, w, h, r, R, G, B, A) {
+  for (let y = y0; y < y0+h; y++) for (let x = x0; x < x0+w; x++) {
+    if (x < 0 || x >= W) continue;
+    let inside = true;
+    for (const [cx2,cy2] of [[x0+r,y0+r],[x0+w-r,y0+r],[x0+r,y0+h-r],[x0+w-r,y0+h-r]]) {
+      if ((x+0.5<cx2&&y+0.5<cy2)||(x+0.5>x0+w-r&&y+0.5<cy2)||(x+0.5<cx2&&y+0.5>y0+h-r)||(x+0.5>x0+w-r&&y+0.5>y0+h-r)) {
+        if (Math.sqrt((x+0.5-cx2)**2+(y+0.5-cy2)**2)>r+0.5){inside=false;break;}
+      }
+    }
+    if (!inside) continue;
+    const i=(y*W+x)*4; buf[i]=R;buf[i+1]=G;buf[i+2]=B;buf[i+3]=A;
   }
-  return out;
+}
+
+function eraseCircle(buf, W, cx, cy, r) {
+  for (let y=Math.floor(cy-r-1);y<=Math.ceil(cy+r+1);y++) for (let x=Math.floor(cx-r-1);x<=Math.ceil(cx+r+1);x++) {
+    if (x<0||x>=W||y<0) continue;
+    const d=Math.sqrt((x+0.5-cx)**2+(y+0.5-cy)**2), i=(y*W+x)*4;
+    if(i<0||i>=buf.length-3)continue;
+    if(d<=r)buf[i+3]=0; else if(d<=r+0.8)buf[i+3]=Math.min(buf[i+3],Math.round(255*((d-r)/0.8)));
+  }
+}
+
+function eraseLine(buf, W, x0, x1, y) {
+  for (let x=x0;x<=x1;x++){const i=(y*W+x)*4;if(i>=0&&i<buf.length-3)buf[i+3]=0;}
+}
+
+function fillTriangle(buf, W, x0, y0, x1, y1, x2, y2, R, G, B, A) {
+  const minY=Math.max(0,Math.min(y0,y1,y2)|0), maxY=Math.min(999,Math.max(y0,y1,y2)|0);
+  const minX=Math.max(0,Math.min(x0,x1,x2)|0), maxX=Math.min(W-1,Math.max(x0,x1,x2)|0);
+  for (let y=minY;y<=maxY;y++) for (let x=minX;x<=maxX;x++) {
+    const px=x+0.5,py=y+0.5;
+    const d0=(x1-x0)*(py-y0)-(y1-y0)*(px-x0);
+    const d1=(x2-x1)*(py-y1)-(y2-y1)*(px-x1);
+    const d2=(x0-x2)*(py-y2)-(y0-y2)*(px-x2);
+    if((d0>=0&&d1>=0&&d2>=0)||(d0<=0&&d1<=0&&d2<=0)){
+      const i=(y*W+x)*4;if(i>=0&&i<buf.length-3){buf[i]=R;buf[i+1]=G;buf[i+2]=B;buf[i+3]=A;}
+    }
+  }
+}
+
+// Plant spirit — 15 unique states. Plant grows seed→flower, with expression variants per stage.
+// Each day starts with a random variant based on date hash.
+
+// 15 states: [plantStage, expressionVariant]
+// Plant stages: seed, sprout, twoLeaf, bigLeaf, bud, flower
+// Expression variants add personality: blink, tongue, yawn, wink, surprised, etc.
+const PET_STATES = [
+  // --- 0% (sleeping) ---
+  { id: 'sleep_normal',  plant: 'seed',    eyes: 'closed',   mouth: 'none',   blush: true  },
+  { id: 'sleep_zzz',     plant: 'seed',    eyes: 'closed',   mouth: 'none',   blush: true,  zzz: true },
+  // --- 1-14% (tired) ---
+  { id: 'tired_droopy',  plant: 'sprout',  eyes: 'half',     mouth: 'frown',  blush: false },
+  { id: 'tired_yawn',    plant: 'sprout',  eyes: 'closed',   mouth: 'O',      blush: false },
+  // --- 15-34% (meh) ---
+  { id: 'meh_blink',     plant: 'twoLeaf', eyes: 'wink',     mouth: 'line',   blush: false },
+  { id: 'meh_normal',    plant: 'twoLeaf', eyes: 'dot',      mouth: 'line',   blush: false },
+  // --- 35-54% (okay) ---
+  { id: 'okay_normal',   plant: 'twoLeaf', eyes: 'dot',      mouth: 'smile',  blush: false },
+  { id: 'okay_curious',  plant: 'twoLeaf', eyes: 'dotUp',    mouth: 'o',      blush: false },
+  // --- 55-79% (happy) ---
+  { id: 'happy_smile',   plant: 'bigLeaf', eyes: 'arc',      mouth: 'smile',  blush: true  },
+  { id: 'happy_tongue',  plant: 'bigLeaf', eyes: 'arc',      mouth: 'tongue', blush: true  },
+  { id: 'happy_wink',    plant: 'bigLeaf', eyes: 'winkHappy',mouth: 'grin',   blush: true  },
+  // --- 80-99% (excited) ---
+  { id: 'excited_sparkle',plant:'bud',     eyes: 'big',      mouth: 'grin',   blush: true  },
+  { id: 'excited_star',  plant: 'bud',     eyes: 'star',     mouth: 'grin',   blush: true  },
+  // --- 100% (celebrate) ---
+  { id: 'celebrate_wow', plant: 'flower',  eyes: 'huge',     mouth: 'huge',   blush: true  },
+  { id: 'celebrate_love',plant: 'flower',  eyes: 'heart',    mouth: 'huge',   blush: true  },
+];
+
+function getPetState(total, completed) {
+  if (total === 0) return 'happy_smile';
+  const pct = completed / total;
+  // Determine stage
+  let pool;
+  if (pct >= 1)        pool = PET_STATES.filter(s => s.plant === 'flower');
+  else if (pct >= 0.8) pool = PET_STATES.filter(s => s.plant === 'bud');
+  else if (pct >= 0.55)pool = PET_STATES.filter(s => s.plant === 'bigLeaf');
+  else if (pct >= 0.35)pool = PET_STATES.filter(s => s.id.startsWith('okay'));
+  else if (pct >= 0.15)pool = PET_STATES.filter(s => s.id.startsWith('meh'));
+  else if (pct > 0)    pool = PET_STATES.filter(s => s.plant === 'sprout');
+  else                 pool = PET_STATES.filter(s => s.plant === 'seed');
+  // Pick variant based on today's date (changes daily)
+  const day = new Date().toISOString().slice(0, 10);
+  let hash = 0;
+  for (let i = 0; i < day.length; i++) hash = (hash * 31 + day.charCodeAt(i)) | 0;
+  return pool[Math.abs(hash) % pool.length].id;
+}
+
+function renderPetIcon(total, completed) {
+  const stateId = getPetState(total, completed);
+  return renderPetIconForState(PET_STATES.find(s => s.id === stateId) || PET_STATES[0], total, completed);
+}
+
+function renderPetIconForState(state, total, completed) {
+  const cells = Math.min(total, 10);
+  const filled = total <= 10 ? completed : Math.round(completed / total * 10);
+
+  const cellW = 5, cellH = 4, cellGap = 2;
+  const batW = cells > 0 ? cells * (cellW + cellGap) - cellGap : 0;
+  const W = Math.max(44, batW + 4);
+  const batY = 40;
+  const H = cells > 0 ? batY + cellH + 1 : 40;
+  const cx = Math.floor(W / 2);
+  const bodyR = 13, bodyY = 26;
+  const K = 0;
+
+  const buf = Buffer.alloc(W * H * 4);
+
+  // --- Body ---
+  fillCircle(buf, W, cx, bodyY, bodyR, K,K,K,255);
+  eraseCircle(buf, W, cx-4, bodyY-5, 3);
+  fillCircle(buf, W, cx-4, bodyY-5, 3, K,K,K,80);
+  // Feet
+  fillCircle(buf, W, cx-5, bodyY+bodyR-1, 3, K,K,K,255);
+  fillCircle(buf, W, cx+5, bodyY+bodyR-1, 3, K,K,K,255);
+
+  // ====== PLANT ======
+  const sb = bodyY - bodyR;
+
+  if (state.plant === 'seed') {
+    fillCircle(buf, W, cx, sb-2, 3.5, K,K,K,255);
+  } else if (state.plant === 'sprout') {
+    for (let y=sb;y>=sb-8;y--) fillCircle(buf,W,cx,y,1.5,K,K,K,255);
+    fillCircle(buf,W,cx+4,sb-6,3.5,K,K,K,255);
+    fillCircle(buf,W,cx+2,sb-5,2.5,K,K,K,255);
+  } else if (state.plant === 'twoLeaf') {
+    for (let y=sb;y>=sb-9;y--) fillCircle(buf,W,cx,y,1.8,K,K,K,255);
+    fillCircle(buf,W,cx-4,sb-7,3.5,K,K,K,255);fillCircle(buf,W,cx-2,sb-5,2.5,K,K,K,255);
+    fillCircle(buf,W,cx+4,sb-7,3.5,K,K,K,255);fillCircle(buf,W,cx+2,sb-5,2.5,K,K,K,255);
+  } else if (state.plant === 'bigLeaf') {
+    for (let y=sb;y>=sb-10;y--) fillCircle(buf,W,cx,y,2,K,K,K,255);
+    fillCircle(buf,W,cx-7,sb-9,5,K,K,K,255);fillCircle(buf,W,cx-4,sb-6,3,K,K,K,255);
+    fillCircle(buf,W,cx+7,sb-9,5,K,K,K,255);fillCircle(buf,W,cx+4,sb-6,3,K,K,K,255);
+  } else if (state.plant === 'bud') {
+    for (let y=sb;y>=sb-9;y--) fillCircle(buf,W,cx,y,2,K,K,K,255);
+    fillCircle(buf,W,cx-4,sb-4,3,K,K,K,255);fillCircle(buf,W,cx+4,sb-4,3,K,K,K,255);
+    const budCy=sb-13;
+    for (let y=0;y<H;y++) for (let x=0;x<W;x++){
+      const dx=(x+0.5-cx)/4,dy=(y+0.5-budCy)/6;
+      if(dx*dx+dy*dy<=1){const i=(y*W+x)*4;buf[i]=buf[i+1]=buf[i+2]=K;buf[i+3]=255;}
+    }
+  } else if (state.plant === 'flower') {
+    for (let y=sb;y>=sb-8;y--) fillCircle(buf,W,cx,y,2,K,K,K,255);
+    fillCircle(buf,W,cx-4,sb-4,3,K,K,K,255);fillCircle(buf,W,cx+4,sb-4,3,K,K,K,255);
+    const fx=cx,fy=sb-13;
+    for (let a=0;a<5;a++){
+      const angle=-Math.PI/2+(a*Math.PI*2/5);
+      fillCircle(buf,W,fx+Math.cos(angle)*7,fy+Math.sin(angle)*6,4.5,K,K,K,255);
+    }
+    eraseCircle(buf,W,fx,fy,3);fillCircle(buf,W,fx,fy,3,K,K,K,160);
+  }
+
+  // ====== EYES — only clean simple shapes ======
+  const eyeY = bodyY - 3, eyeS = 5;
+
+  // Helper: clean arc cutout (for closed/happy eyes)
+  function eyeArc(ex, ey, dir) { // dir: 1=down(closed), -1=up(happy)
+    for (let dx=-3;dx<=3;dx++) {
+      const dy = Math.abs(dx)<=1 ? dir : 0;
+      const i = ((ey+dy)*W+ex+dx)*4; if(i>=0&&i<buf.length-3) buf[i+3]=0;
+      const i2 = ((ey+dy+dir)*W+ex+dx)*4; if(i2>=0&&i2<buf.length-3) buf[i2+3]=0;
+    }
+  }
+
+  if (state.eyes === 'closed') {
+    // Clean closed arcs ⌒⌒
+    for (const s of [-1,1]) eyeArc(cx+s*eyeS, eyeY, 1);
+  } else if (state.eyes === 'half') {
+    // Small round eyes (smaller than normal = sleepy)
+    for (const s of [-1,1]) eraseCircle(buf,W,cx+s*eyeS,eyeY,2);
+  } else if (state.eyes === 'dot') {
+    // Normal round eyes with pupil
+    for (const s of [-1,1]) { eraseCircle(buf,W,cx+s*eyeS,eyeY,3.5); fillCircle(buf,W,cx+s*eyeS,eyeY+0.5,1.5,K,K,K,255); }
+  } else if (state.eyes === 'dotUp') {
+    // Looking up (pupil shifted up)
+    for (const s of [-1,1]) { const ex=cx+s*eyeS; eraseCircle(buf,W,ex,eyeY,3.5); fillCircle(buf,W,ex,eyeY-1,1.5,K,K,K,255); }
+  } else if (state.eyes === 'wink') {
+    // Left: normal eye. Right: closed arc
+    eraseCircle(buf,W,cx-eyeS,eyeY,3.5); fillCircle(buf,W,cx-eyeS,eyeY+0.5,1.5,K,K,K,255);
+    eyeArc(cx+eyeS, eyeY, 1);
+  } else if (state.eyes === 'winkHappy') {
+    // Left: happy arc. Right: closed arc
+    eyeArc(cx-eyeS, eyeY, -1);
+    eyeArc(cx+eyeS, eyeY, 1);
+  } else if (state.eyes === 'arc') {
+    // Happy arcs ∪∪
+    for (const s of [-1,1]) eyeArc(cx+s*eyeS, eyeY, -1);
+  } else if (state.eyes === 'big') {
+    // Big round eyes with pupil + small highlight
+    for (const s of [-1,1]) { const ex=cx+s*eyeS;
+      eraseCircle(buf,W,ex,eyeY,4.5); fillCircle(buf,W,ex,eyeY+0.5,2.2,K,K,K,255); eraseCircle(buf,W,ex-1.5,eyeY-1.5,1);
+    }
+  } else if (state.eyes === 'star') {
+    // Sparkle: big eyes with TWO highlight dots (looks sparkly without messy cross)
+    for (const s of [-1,1]) { const ex=cx+s*eyeS;
+      eraseCircle(buf,W,ex,eyeY,4.5); fillCircle(buf,W,ex,eyeY+0.5,2.2,K,K,K,255);
+      eraseCircle(buf,W,ex-1.5,eyeY-1.5,1.2); eraseCircle(buf,W,ex+1,eyeY+1,0.8);
+    }
+  } else if (state.eyes === 'huge') {
+    // Extra-large round eyes
+    for (const s of [-1,1]) { const ex=cx+s*eyeS;
+      eraseCircle(buf,W,ex,eyeY,5); fillCircle(buf,W,ex,eyeY+0.5,2.5,K,K,K,255); eraseCircle(buf,W,ex-2,eyeY-2,1.2);
+    }
+  } else if (state.eyes === 'heart') {
+    // Two small circles side by side (reads as heart shape at tiny size)
+    for (const s of [-1,1]) { const ex=cx+s*eyeS;
+      eraseCircle(buf,W,ex-1.5,eyeY-0.5,2); eraseCircle(buf,W,ex+1.5,eyeY-0.5,2);
+    }
+  }
+
+  // ====== MOUTH — only clean shapes ======
+  const mY = bodyY + 5;
+  if (state.mouth === 'frown') {
+    // Thin downward arc
+    for(let dx=-3;dx<=3;dx++){const dy=Math.abs(dx)<=1?0:-1;
+      const i=((mY+dy)*W+cx+dx)*4;if(i>=0&&i<buf.length-3)buf[i+3]=0;}
+  } else if (state.mouth === 'line') {
+    // Simple dash
+    eraseLine(buf,W,cx-3,cx+3,mY);
+  } else if (state.mouth === 'o' || state.mouth === 'O') {
+    // Small circle (o=tiny, O=small)
+    eraseCircle(buf,W,cx,mY,state.mouth==='O'?2.5:1.5);
+  } else if (state.mouth === 'smile') {
+    // Clean thin U-curve
+    for(let dx=-4;dx<=4;dx++){const dy=Math.abs(dx)<=1?2:Math.abs(dx)<=3?1:0;
+      const i=((mY+dy)*W+cx+dx)*4;if(i>=0&&i<buf.length-3)buf[i+3]=0;}
+  } else if (state.mouth === 'grin') {
+    // Wider smile (but NOT the face-eating version)
+    for(let dx=-5;dx<=5;dx++){const dy=Math.abs(dx)<=2?2:Math.abs(dx)<=4?1:0;
+      const i=((mY+dy)*W+cx+dx)*4;if(i>=0&&i<buf.length-3)buf[i+3]=0;}
+  } else if (state.mouth === 'tongue') {
+    // Smile + small bump below (tongue sticking out of body silhouette)
+    for(let dx=-4;dx<=4;dx++){const dy=Math.abs(dx)<=1?2:Math.abs(dx)<=3?1:0;
+      const i=((mY+dy)*W+cx+dx)*4;if(i>=0&&i<buf.length-3)buf[i+3]=0;}
+    // Tongue extends BELOW body as a small circle
+    fillCircle(buf,W,cx,bodyY+bodyR+2,2.5,K,K,K,200);
+  } else if (state.mouth === 'huge') {
+    // Slightly bigger grin (controlled, not face-eating)
+    for(let dx=-5;dx<=5;dx++){const dy=Math.abs(dx)<=2?3:Math.abs(dx)<=4?2:Math.abs(dx)<=5?1:0;
+      const i=((mY+dy)*W+cx+dx)*4;if(i>=0&&i<buf.length-3)buf[i+3]=0;}
+  }
+
+  // ====== BLUSH ======
+  if (state.blush) {
+    fillCircle(buf,W,cx-9,bodyY+1,2.5,K,K,K,50);
+    fillCircle(buf,W,cx+9,bodyY+1,2.5,K,K,K,50);
+  }
+
+  // ====== ZZZ ======
+  if (state.zzz) {
+    fillCircle(buf,W,cx+14,sb-4,2,K,K,K,180);
+    fillCircle(buf,W,cx+17,sb-7,1.5,K,K,K,140);
+  }
+
+  // Battery bar
+  if (cells > 0) {
+    const batX = Math.floor((W - batW) / 2);
+    for (let c = 0; c < cells; c++) {
+      const bx = batX + c * (cellW + cellGap);
+      if (c < filled) {
+        fillRoundRect(buf,W,bx,batY,cellW,cellH,1,K,K,K,220);
+      } else {
+        for(let y=batY;y<batY+cellH;y++) for(let x=bx;x<bx+cellW;x++){
+          if(y===batY||y===batY+cellH-1||x===bx||x===bx+cellW-1){
+            const i=(y*W+x)*4;if(i>=0&&i<buf.length-3){buf[i]=K;buf[i+1]=K;buf[i+2]=K;buf[i+3]=100;}
+          }
+        }
+      }
+    }
+  }
+
+  return { w: W, h: H, pixels: buf };
 }
 
 function createMacTrayIcon() {
-  const { w: w1, h: h1, pixels: p1 } = pixelsFromRows(SPROUT_16);
-  const { w: w2, h: h2, pixels: p2 } = pixelsFromRows(scale2x(SPROUT_16));
-  const png16 = encodePNG(w1, h1, p1);
-  const png32 = encodePNG(w2, h2, p2);
-  const img = nativeImage.createFromBuffer(png16, { scaleFactor: 1 });
-  img.addRepresentation({ scaleFactor: 2, buffer: png32 });
+  const { w, h, pixels } = renderPetIcon(0, 0);
+  const img = nativeImage.createFromBuffer(encodePNG(w, h, pixels), { scaleFactor: 2 });
   img.setTemplateImage(true);
   return img;
 }
 
-function createTrayIcon() {
-  // Create a minimal valid PNG programmatically (32x32 green circle with yellow center)
-  // Using raw bitmap approach that Electron supports on Windows
-  const size = 32;
-  const pixels = Buffer.alloc(size * size * 4);
-  const cx = size / 2, cy = size / 2, r = 13;
-
-  for (let y = 0; y < size; y++) {
-    for (let x = 0; x < size; x++) {
-      const dx = x - cx + 0.5, dy = y - cy + 0.5;
-      const dist = Math.sqrt(dx * dx + dy * dy);
-      const idx = (y * size + x) * 4;
-
-      // Yellow center (flower)
-      const cdist = Math.sqrt(dx * dx + (dy + 2) * (dy + 2));
-      if (cdist <= 4) {
-        pixels[idx] = 251; pixels[idx+1] = 191; pixels[idx+2] = 36; pixels[idx+3] = 255;
-      } else if (dist <= r) {
-        pixels[idx] = 34; pixels[idx+1] = 197; pixels[idx+2] = 94; pixels[idx+3] = 255;
-      } else if (dist <= r + 1) {
-        const a = Math.max(0, Math.round(255 * (r + 1 - dist)));
-        pixels[idx] = 34; pixels[idx+1] = 197; pixels[idx+2] = 94; pixels[idx+3] = a;
-      }
-    }
-  }
-
-  // Encode as minimal PNG manually
-  const png = encodePNG(size, size, pixels);
-  return nativeImage.createFromBuffer(png);
+function updateTrayIcon(total, completed) {
+  if (!tray) return;
+  const { w, h, pixels } = renderPetIcon(total, completed);
+  const img = nativeImage.createFromBuffer(encodePNG(w, h, pixels), { scaleFactor: 2 });
+  img.setTemplateImage(true);
+  tray.setImage(img);
 }
 
 function encodePNG(w, h, rgba) {
@@ -257,7 +513,7 @@ function encodePNG(w, h, rgba) {
 }
 
 function createTray() {
-  const icon = IS_MAC ? createMacTrayIcon() : createTrayIcon();
+  const icon = createMacTrayIcon(); // colored pet icon works on all platforms
   tray = new Tray(icon);
   tray.setToolTip('Green Todo - Ctrl+Space');
   tray.setContextMenu(Menu.buildFromTemplate([
@@ -309,14 +565,15 @@ app.whenReady().then(() => {
   createWindow();
   try { createTray(); } catch (e) { console.error('Tray creation failed:', e); }
   const cfg = loadConfig();
-  const savedKey = cfg.hotkey || 'Ctrl+Space';
+  const defaultKey = IS_MAC ? 'Alt+Space' : 'Ctrl+Space';
+  const savedKey = cfg.hotkey || defaultKey;
   if (!registerHotkey(savedKey)) {
     registerHotkey(IS_MAC ? 'Cmd+Alt+T' : 'Ctrl+Alt+T');
   }
   if (tray) tray.setToolTip(`Green Todo - ${currentHotkey || savedKey}`);
 });
 
-ipcMain.handle('get-hotkey', () => currentHotkey || 'Ctrl+Space');
+ipcMain.handle('get-hotkey', () => currentHotkey || (IS_MAC ? 'Alt+Space' : 'Ctrl+Space'));
 
 ipcMain.handle('set-hotkey', (_e, newKey) => {
   const ok = registerHotkey(newKey);
@@ -327,6 +584,30 @@ ipcMain.handle('set-hotkey', (_e, newKey) => {
     if (tray) tray.setToolTip(`Green Todo - ${newKey}`);
   }
   return { success: ok, hotkey: currentHotkey };
+});
+
+// Backup: renderer sends full todos JSON on every save
+ipcMain.on('backup-todos', (_e, jsonString) => {
+  saveTodosBackup(jsonString);
+});
+
+// Restore: renderer asks for backup if localStorage is empty
+ipcMain.handle('load-todos-backup', () => {
+  return loadTodosBackup();
+});
+
+ipcMain.on('update-tray-progress', (_e, total, completed) => {
+  updateTrayIcon(total, completed);
+});
+
+ipcMain.on('preview-pet-state', (_e, index) => {
+  if (!tray) return;
+  const state = PET_STATES[index % PET_STATES.length];
+  // Render with forced state
+  const {w, h, pixels} = renderPetIconForState(state, 5, index < 2 ? 0 : Math.min(index, 5));
+  const img = nativeImage.createFromBuffer(encodePNG(w, h, pixels), { scaleFactor: 2 });
+  img.setTemplateImage(true);
+  tray.setImage(img);
 });
 
 ipcMain.on('hide-window', () => {

@@ -290,6 +290,9 @@ class GreenTodo {
       }
     });
 
+    // Pet preview button — cycle through all states
+    document.getElementById('pet-preview-btn').addEventListener('click', () => this.previewPetStates());
+
     this.tabIncomplete.addEventListener('click', () => this.switchTab('incomplete'));
     this.tabCompleted.addEventListener('click', () => this.switchTab('completed'));
     this.addBtn.addEventListener('click', () => this.showModal());
@@ -365,7 +368,15 @@ class GreenTodo {
   // ---- Data ----
   loadTodos() {
     try {
-      const data = localStorage.getItem('green-todos');
+      let data = localStorage.getItem('green-todos');
+
+      // If localStorage is empty, try to restore from file backup
+      if (!data && window.electronAPI && window.electronAPI.loadTodosBackup) {
+        // loadTodosBackup is async (ipcRenderer.invoke), but constructor needs sync data.
+        // We'll trigger async restore separately. For now return [] and restore later.
+        this._needsAsyncRestore = true;
+      }
+
       if (!data) return [];
       const parsed = JSON.parse(data);
       if (!Array.isArray(parsed)) return [];
@@ -384,15 +395,44 @@ class GreenTodo {
     } catch { return []; }
   }
 
-  saveTodos() {
+  // Called after constructor if localStorage was empty — tries to restore from file backup
+  async tryRestoreFromBackup() {
+    if (!this._needsAsyncRestore) return;
+    this._needsAsyncRestore = false;
     try {
-      localStorage.setItem('green-todos', JSON.stringify(this.todos));
+      const backupData = await window.electronAPI.loadTodosBackup();
+      if (backupData) {
+        const parsed = JSON.parse(backupData);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          this.todos = parsed;
+          localStorage.setItem('green-todos', backupData);
+          this.render();
+          this.announce(`已从备份恢复 ${parsed.length} 条待办`);
+          console.log(`[backup] restored ${parsed.length} todos from file backup`);
+        }
+      }
+    } catch (e) {
+      console.error('[backup] restore failed:', e);
+    }
+  }
+
+  saveTodos() {
+    const json = JSON.stringify(this.todos);
+    // 1. Write to localStorage (fast, in-memory)
+    try {
+      localStorage.setItem('green-todos', json);
     } catch (e) {
       if (e.name === 'QuotaExceededError') {
         this.cleanupOldTodos(7);
         try { localStorage.setItem('green-todos', JSON.stringify(this.todos)); } catch {}
       }
     }
+    // 2. Write to file backup via IPC (atomic write, survives kill -9)
+    try {
+      if (window.electronAPI && window.electronAPI.backupTodos) {
+        window.electronAPI.backupTodos(json);
+      }
+    } catch {}
   }
 
   cleanupOldTodos(days = DATA_RETENTION_DAYS) {
@@ -527,6 +567,9 @@ class GreenTodo {
     const pct = total > 0 ? Math.round((comp / total) * 100) : 0;
     this.progressFill.style.width = `${pct}%`;
 
+    // Update menu bar pet + battery icon
+    try { window.electronAPI.updateTrayProgress(total, comp); } catch {}
+
     if (total === 0) {
       this.progressText.textContent = '种下第一颗种子吧';
     } else if (pct === 100) {
@@ -540,6 +583,50 @@ class GreenTodo {
     } else {
       this.progressText.textContent = `${total} 项待办，开始吧`;
     }
+  }
+
+  previewPetStates() {
+    if (this._petPreviewing) return;
+    this._petPreviewing = true;
+    const btn = document.getElementById('pet-preview-btn');
+    const textEl = this.progressText;
+    const origText = textEl.textContent;
+    btn.classList.add('previewing');
+
+    // States: [total, completed, label]
+    const states = [
+      [10, 0, '🌑 种子沉睡'],
+      [10, 0, '💤 种子做梦'],
+      [10, 1, '🌱 发芽了~'],
+      [10, 1, '😪 打哈欠'],
+      [10, 2, '😐 眨眨眼'],
+      [10, 2, '🌿 慢慢长'],
+      [10, 4, '🙂 还不错~'],
+      [10, 4, '🤔 好奇中'],
+      [10, 6, '😊 开心！'],
+      [10, 6, '😋 吐舌头'],
+      [10, 6, '😉 眨眼笑'],
+      [10, 8, '✨ 闪闪眼'],
+      [10, 8, '⭐ 星星眼'],
+      [10, 10, '🌸 花开了！'],
+      [10, 10, '💕 恋爱了！'],
+    ];
+    let i = 0;
+    const step = () => {
+      if (i < states.length) {
+        const [t, c, label] = states[i];
+        try { window.electronAPI.previewPetState(i); } catch {}
+        textEl.textContent = label;
+        i++;
+        setTimeout(step, 800);
+      } else {
+        btn.classList.remove('previewing');
+        textEl.textContent = origText;
+        this._petPreviewing = false;
+        this.updateProgress(); // restore real state
+      }
+    };
+    step();
   }
 
   updateEmptyStates() {
@@ -1254,4 +1341,8 @@ class GreenTodo {
   }
 }
 
-document.addEventListener('DOMContentLoaded', () => { window.app = new GreenTodo(); });
+document.addEventListener('DOMContentLoaded', () => {
+  window.app = new GreenTodo();
+  // If localStorage was empty, attempt async restore from file backup
+  window.app.tryRestoreFromBackup();
+});

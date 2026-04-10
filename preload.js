@@ -2,6 +2,10 @@ const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('electronAPI', {
   platform: process.platform,
+  backupTodos: (jsonString) => ipcRenderer.send('backup-todos', jsonString),
+  loadTodosBackup: () => ipcRenderer.invoke('load-todos-backup'),
+  updateTrayProgress: (total, completed) => ipcRenderer.send('update-tray-progress', total, completed),
+  previewPetState: (index) => ipcRenderer.send('preview-pet-state', index),
   hideWindow: () => ipcRenderer.send('hide-window'),
   quitApp: () => ipcRenderer.send('app-quit'),
   toggleAlwaysOnTop: () => ipcRenderer.send('toggle-always-on-top'),
