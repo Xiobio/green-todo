@@ -29,11 +29,13 @@ pub fn run() {
         .setup(|app| {
             let window = app.get_webview_window("main").unwrap();
 
-            // macOS: hide from Dock, enable shadow for rounded corners
+            // macOS: hide from Dock, shadow, visible on all workspaces
             #[cfg(target_os = "macos")]
             {
                 app.set_activation_policy(tauri::ActivationPolicy::Accessory);
                 let _ = window.set_shadow(true);
+                let _ = window.set_background_color(Some(tauri::window::Color(247, 253, 247, 230)));
+                let _ = window.set_visible_on_all_workspaces(true);
             }
 
             // --- Tray icon ---
@@ -53,7 +55,7 @@ pub fn run() {
             let tray_image = create_tray_image(0, 0);
             let _tray = TrayIconBuilder::with_id("main")
                 .icon(tray_image)
-                .icon_as_template(true)
+                .icon_as_template(true) // macOS auto-adapts color for light/dark menu bar
                 .tooltip("Green Todo - ⌥Space")
                 .menu(&menu)
                 .on_menu_event(move |app, event| {

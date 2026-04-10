@@ -65,19 +65,19 @@
 
 * { margin: 0; padding: 0; box-sizing: border-box; }
 
-html {
+html, body {
   background: transparent;
+  overflow: hidden;
 }
 
 body {
   margin: 0;
   padding: 0;
-  background: transparent;
-  overflow: hidden;
   font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, sans-serif;
   color: var(--text);
-  /* Tauri: clip the WebView itself to match .app-container's rounded corners */
-  border-radius: var(--radius);
+  /* Tauri: clip the WebView to match .app-container's rounded corners */
+  border-radius: 16px;
+  -webkit-mask-image: -webkit-radial-gradient(white, black);
 }
 
 /* ---- App Container ---- */
