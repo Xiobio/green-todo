@@ -34,7 +34,6 @@ pub fn run() {
             {
                 app.set_activation_policy(tauri::ActivationPolicy::Accessory);
                 let _ = window.set_shadow(true);
-                let _ = window.set_background_color(Some(tauri::window::Color(247, 253, 247, 230)));
                 let _ = window.set_visible_on_all_workspaces(true);
             }
 
@@ -55,7 +54,7 @@ pub fn run() {
             let tray_image = create_tray_image(0, 0);
             let _tray = TrayIconBuilder::with_id("main")
                 .icon(tray_image)
-                .icon_as_template(true) // macOS auto-adapts color for light/dark menu bar
+                .icon_as_template(false) // user wants pure white icon always
                 .tooltip("Green Todo - ⌥Space")
                 .menu(&menu)
                 .on_menu_event(move |app, event| {
@@ -65,7 +64,6 @@ pub fn run() {
                                 if w.is_visible().unwrap_or(false) {
                                     let _ = w.hide();
                                 } else {
-                                    let _ = w.center();
                                     let _ = w.show();
                                     let _ = w.set_focus();
                                 }
@@ -92,7 +90,6 @@ pub fn run() {
                             if w.is_visible().unwrap_or(false) {
                                 let _ = w.hide();
                             } else {
-                                let _ = w.center();
                                 let _ = w.show();
                                 let _ = w.set_focus();
                             }
@@ -115,7 +112,6 @@ pub fn run() {
                         if w2.is_visible().unwrap_or(false) {
                             let _ = w2.hide();
                         } else {
-                            let _ = w2.center();
                             let _ = w2.show();
                             let _ = w2.set_focus();
                         }
@@ -129,7 +125,7 @@ pub fn run() {
                     move |_app, _shortcut, event| {
                         if event.state == tauri_plugin_global_shortcut::ShortcutState::Pressed {
                             if w3.is_visible().unwrap_or(false) { let _ = w3.hide(); }
-                            else { let _ = w3.center(); let _ = w3.show(); let _ = w3.set_focus(); }
+                            else { let _ = w3.show(); let _ = w3.set_focus(); }
                         }
                     },
                 );

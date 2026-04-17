@@ -569,6 +569,8 @@ class GreenTodo {
 
     // Update menu bar pet + battery icon
     try { window.electronAPI.updateTrayProgress(total, comp); } catch {}
+    // Update in-app pet widget
+    try { this._updatePetWidget(total, comp); } catch {}
 
     if (total === 0) {
       this.progressText.textContent = '种下第一颗种子吧';
@@ -1338,6 +1340,226 @@ class GreenTodo {
     if (!iso) return '';
     const d = new Date(iso);
     return `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
+  }
+
+  // ---- In-app Pet Widget ----
+  _getPetState(total, completed) {
+    const states = [
+      { id:"sleep_normal",p:"seed",e:"arc",m:"smile",b:true },
+      { id:"sleep_zzz",p:"seed",e:"closed",m:"o",b:true },
+      { id:"tired_droopy",p:"sprout",e:"half",m:"line",b:true },
+      { id:"tired_yawn",p:"sprout",e:"closed",m:"o",b:true },
+      { id:"meh_blink",p:"twoLeaf",e:"wink",m:"line",b:false },
+      { id:"meh_normal",p:"twoLeaf",e:"dot",m:"line",b:false },
+      { id:"okay_normal",p:"twoLeaf",e:"dot",m:"smile",b:false },
+      { id:"okay_curious",p:"twoLeaf",e:"dotUp",m:"o",b:false },
+      { id:"happy_smile",p:"bigLeaf",e:"arc",m:"smile",b:true },
+      { id:"happy_tongue",p:"bigLeaf",e:"arc",m:"tongue",b:true },
+      { id:"happy_wink",p:"bigLeaf",e:"winkHappy",m:"grin",b:true },
+      { id:"excited_sparkle",p:"bud",e:"big",m:"grin",b:true },
+      { id:"excited_star",p:"bud",e:"star",m:"grin",b:true },
+      { id:"celebrate_wow",p:"flower",e:"huge",m:"huge",b:true },
+      { id:"celebrate_love",p:"flower",e:"heart",m:"huge",b:true },
+    ];
+    if (total === 0) return states[0]; // happy seed
+    const pct = completed / total;
+    let pool;
+    if (pct >= 1.0) pool = states.filter(s => s.p === 'flower');
+    else if (pct >= 0.8) pool = states.filter(s => s.p === 'bud');
+    else if (pct >= 0.55) pool = states.filter(s => s.p === 'bigLeaf');
+    else if (pct >= 0.35) pool = states.filter(s => s.id.startsWith('okay'));
+    else if (pct >= 0.15) pool = states.filter(s => s.id.startsWith('meh'));
+    else if (pct > 0) pool = states.filter(s => s.p === 'sprout');
+    else pool = states.filter(s => s.p === 'seed');
+    const day = new Date().toDateString();
+    let hash = 0; for (const c of day) hash = (hash * 31 + c.charCodeAt(0)) | 0;
+    return pool[Math.abs(hash) % pool.length];
+  }
+
+  _updatePetWidget(total, comp) {
+    const canvas = document.getElementById('pet-canvas');
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    const W = 88, H = 88; // canvas pixel size (2x for retina)
+    canvas.width = W; canvas.height = H;
+
+    const st = this._getPetState(total, comp);
+    const stateId = st.id;
+
+    // Bounce animation on state change
+    if (this._lastPetState && this._lastPetState !== stateId) {
+      const widget = document.getElementById('pet-widget');
+      widget.classList.remove('bounce');
+      void widget.offsetWidth;
+      widget.classList.add('bounce');
+    }
+    this._lastPetState = stateId;
+
+    ctx.clearRect(0, 0, W, H);
+    const isDark = document.getElementById('app-container').classList.contains('dark');
+    const fg = isDark ? '#a0d8a0' : '#22c55e';
+    const fg2 = isDark ? '#7bc87b' : '#16a34a';
+    const eye_fg = isDark ? '#1a2e1a' : '#14532d';
+
+    const cx = 44, bcy = 52, br = 24;
+
+    // Body
+    ctx.beginPath(); ctx.arc(cx, bcy, br, 0, Math.PI * 2);
+    ctx.fillStyle = fg; ctx.fill();
+
+    // Plant
+    const sb = bcy - br;
+    this._drawPlant(ctx, st.p, cx, sb, fg2);
+
+    // Blush
+    if (st.b) {
+      ctx.globalAlpha = 0.25;
+      ctx.fillStyle = isDark ? '#ff9999' : '#ff7777';
+      ctx.beginPath(); ctx.ellipse(cx - 16, bcy + 2, 5, 3.5, 0, 0, Math.PI*2); ctx.fill();
+      ctx.beginPath(); ctx.ellipse(cx + 16, bcy + 2, 5, 3.5, 0, 0, Math.PI*2); ctx.fill();
+      ctx.globalAlpha = 1;
+    }
+
+    // Eyes
+    this._drawEyes(ctx, st.e, cx, bcy - 4, 12, eye_fg, fg);
+
+    // Mouth
+    this._drawMouth(ctx, st.m, cx, bcy + 10, eye_fg);
+  }
+
+  _drawPlant(ctx, plant, cx, sb, color) {
+    ctx.strokeStyle = color; ctx.fillStyle = color;
+    ctx.lineWidth = 2.5; ctx.lineCap = 'round';
+    if (plant === 'seed') {
+      ctx.beginPath(); ctx.arc(cx, sb - 5, 5, 0, Math.PI * 2); ctx.fill();
+    } else if (plant === 'sprout') {
+      ctx.beginPath(); ctx.moveTo(cx, sb); ctx.lineTo(cx, sb - 15); ctx.stroke();
+      ctx.beginPath(); ctx.arc(cx + 9, sb - 16, 6, 0, Math.PI * 2); ctx.fill();
+    } else if (plant === 'twoLeaf') {
+      ctx.beginPath(); ctx.moveTo(cx, sb); ctx.lineTo(cx, sb - 15); ctx.stroke();
+      ctx.beginPath(); ctx.arc(cx - 10, sb - 18, 6, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.arc(cx + 10, sb - 18, 6, 0, Math.PI * 2); ctx.fill();
+    } else if (plant === 'bigLeaf') {
+      ctx.beginPath(); ctx.moveTo(cx, sb); ctx.lineTo(cx, sb - 17); ctx.stroke();
+      ctx.beginPath(); ctx.arc(cx - 13, sb - 20, 9, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.arc(cx + 13, sb - 20, 9, 0, Math.PI * 2); ctx.fill();
+    } else if (plant === 'bud' || plant === 'flower') {
+      ctx.beginPath(); ctx.moveTo(cx, sb); ctx.lineTo(cx, sb - 17); ctx.stroke();
+      const fy = sb - 24;
+      for (let a = 0; a < 3; a++) {
+        const ang = -Math.PI/2 + a * Math.PI * 2 / 3;
+        ctx.beginPath();
+        ctx.arc(cx + Math.cos(ang) * 9, fy + Math.sin(ang) * 9, 7, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      if (plant === 'flower') {
+        ctx.fillStyle = '#fbbf24';
+        ctx.beginPath(); ctx.arc(cx, fy, 4, 0, Math.PI * 2); ctx.fill();
+      }
+    }
+  }
+
+  _drawEyes(ctx, eyes, cx, ey, es, color, bg) {
+    ctx.fillStyle = color; ctx.strokeStyle = color;
+    ctx.lineWidth = 2; ctx.lineCap = 'round';
+    if (eyes === 'closed' || eyes === 'arc' || eyes === 'winkHappy') {
+      // Happy squint ^_^
+      [-1, 1].forEach(s => {
+        const ex = cx + s * es;
+        if (eyes === 'winkHappy' && s > 0) {
+          ctx.beginPath(); ctx.moveTo(ex - 4, ey); ctx.lineTo(ex + 4, ey); ctx.stroke();
+        } else {
+          ctx.beginPath();
+          ctx.moveTo(ex - 5, ey + 1);
+          ctx.quadraticCurveTo(ex, ey - 5, ex + 5, ey + 1);
+          ctx.stroke();
+        }
+      });
+    } else if (eyes === 'half') {
+      [-1, 1].forEach(s => {
+        ctx.beginPath(); ctx.moveTo(cx + s * es - 4, ey); ctx.lineTo(cx + s * es + 4, ey); ctx.stroke();
+      });
+    } else if (eyes === 'dot' || eyes === 'dotUp') {
+      const yo = eyes === 'dotUp' ? -2 : 0;
+      [-1, 1].forEach(s => {
+        const ex = cx + s * es;
+        // White eye bg
+        ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(ex, ey + yo, 6, 0, Math.PI * 2); ctx.fill();
+        // Pupil
+        ctx.fillStyle = color; ctx.beginPath(); ctx.arc(ex + 0.5, ey + yo + 1, 3.5, 0, Math.PI * 2); ctx.fill();
+        // Highlight
+        ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(ex + 2, ey + yo - 1.5, 1.8, 0, Math.PI * 2); ctx.fill();
+      });
+    } else if (eyes === 'wink') {
+      // Left: round, right: wink
+      const lx = cx - es;
+      ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(lx, ey, 6, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = color; ctx.beginPath(); ctx.arc(lx + 0.5, ey + 1, 3.5, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(lx + 2, ey - 1.5, 1.8, 0, Math.PI * 2); ctx.fill();
+      ctx.strokeStyle = color; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.moveTo(cx + es - 5, ey + 1);
+      ctx.quadraticCurveTo(cx + es, ey - 5, cx + es + 5, ey + 1); ctx.stroke();
+    } else if (eyes === 'big' || eyes === 'star' || eyes === 'huge') {
+      const r = eyes === 'huge' ? 8 : 7;
+      [-1, 1].forEach(s => {
+        const ex = cx + s * es;
+        ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(ex, ey, r, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = color; ctx.beginPath(); ctx.arc(ex + 0.5, ey + 1, r * 0.55, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = '#fff';
+        ctx.beginPath(); ctx.arc(ex + 2.5, ey - 2, 2.2, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(ex - 1.5, ey + 2.5, 1.0, 0, Math.PI * 2); ctx.fill();
+      });
+    } else if (eyes === 'heart') {
+      ctx.fillStyle = '#ef4444';
+      [-1, 1].forEach(s => {
+        const ex = cx + s * es;
+        // Heart shape
+        ctx.beginPath();
+        ctx.moveTo(ex, ey + 5);
+        ctx.bezierCurveTo(ex - 8, ey - 2, ex - 4, ey - 8, ex, ey - 3);
+        ctx.bezierCurveTo(ex + 4, ey - 8, ex + 8, ey - 2, ex, ey + 5);
+        ctx.fill();
+      });
+    }
+  }
+
+  _drawMouth(ctx, mouth, cx, my, color) {
+    ctx.strokeStyle = color; ctx.fillStyle = color;
+    ctx.lineWidth = 2; ctx.lineCap = 'round';
+    if (mouth === 'frown') {
+      ctx.beginPath();
+      ctx.moveTo(cx - 5, my + 2); ctx.quadraticCurveTo(cx, my - 2, cx + 5, my + 2);
+      ctx.stroke();
+    } else if (mouth === 'line') {
+      // Cat mouth ω
+      ctx.beginPath();
+      ctx.moveTo(cx - 7, my); ctx.quadraticCurveTo(cx - 3, my + 3, cx, my);
+      ctx.quadraticCurveTo(cx + 3, my + 3, cx + 7, my);
+      ctx.stroke();
+    } else if (mouth === 'o' || mouth === 'O') {
+      const r = mouth === 'O' ? 5 : 3.5;
+      ctx.beginPath(); ctx.arc(cx, my, r, 0, Math.PI * 2);
+      ctx.fillStyle = color; ctx.fill();
+    } else if (mouth === 'smile' || mouth === 'grin') {
+      const w = mouth === 'grin' ? 10 : 8;
+      ctx.lineWidth = 2.5;
+      ctx.beginPath();
+      ctx.moveTo(cx - w, my);
+      ctx.quadraticCurveTo(cx, my + (mouth === 'grin' ? 10 : 7), cx + w, my);
+      ctx.stroke();
+    } else if (mouth === 'tongue') {
+      ctx.lineWidth = 2.5;
+      ctx.beginPath();
+      ctx.moveTo(cx - 8, my); ctx.quadraticCurveTo(cx, my + 7, cx + 8, my);
+      ctx.stroke();
+      // Pink tongue
+      ctx.fillStyle = '#f472b6';
+      ctx.beginPath(); ctx.arc(cx, my + 7, 3.5, 0, Math.PI); ctx.fill();
+    } else if (mouth === 'huge') {
+      // Big open mouth
+      ctx.beginPath(); ctx.arc(cx, my + 2, 8, 0, Math.PI);
+      ctx.fillStyle = color; ctx.fill();
+    }
   }
 }
 

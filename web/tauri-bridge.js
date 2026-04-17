@@ -24,6 +24,18 @@
       onTriggerImport: (cb) => listen('trigger-import', () => cb()),
     };
     document.documentElement.setAttribute('data-platform', window.electronAPI.platform);
+
+    // Manual drag implementation for title bar — fallback for data-tauri-drag-region
+    const win = window.__TAURI__.window.getCurrentWindow();
+    document.addEventListener('mousedown', (e) => {
+      // Check if the click is on the title bar or its children (but not buttons)
+      const titleBar = e.target.closest('.title-bar');
+      if (titleBar && !e.target.closest('.title-bar-right') && !e.target.closest('button')) {
+        e.preventDefault();
+        win.startDragging();
+      }
+    });
+
     return true;
   }
   if (!setup()) {
