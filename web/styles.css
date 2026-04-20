@@ -708,28 +708,26 @@ body {
 
 /* ---- Pet Widget ---- */
 .pet-widget {
-  position: absolute;
-  left: 8px;
-  bottom: 52px;
-  width: 44px;
-  height: 44px;
-  z-index: 21;
-  pointer-events: none;
+  width: 36px;
+  height: 36px;
+  flex-shrink: 0;
+  cursor: pointer;
   transition: transform 0.3s ease;
 }
 .pet-widget canvas {
-  width: 44px;
-  height: 44px;
+  width: 36px;
+  height: 36px;
   image-rendering: -webkit-optimize-contrast;
 }
 /* Bounce animation on state change */
 .pet-widget.bounce {
-  animation: petBounce 0.4s ease;
+  animation: petBounce 0.5s ease;
 }
 @keyframes petBounce {
   0% { transform: scale(1) translateY(0); }
-  30% { transform: scale(1.15) translateY(-4px); }
-  60% { transform: scale(0.95) translateY(1px); }
+  25% { transform: scale(1.2) translateY(-3px); }
+  50% { transform: scale(0.9) translateY(1px); }
+  75% { transform: scale(1.05) translateY(-1px); }
   100% { transform: scale(1) translateY(0); }
 }
 
@@ -743,7 +741,6 @@ body {
   align-items: center;
   gap: 6px;
   padding: 10px 14px 12px;
-  padding-left: 58px; /* make room for pet widget */
   z-index: 20;
   background: linear-gradient(to top, var(--bg) 75%, transparent);
 }

@@ -572,6 +572,15 @@ class GreenTodo {
     // Update in-app pet widget
     try { this._updatePetWidget(total, comp); } catch {}
 
+    // Bind pet click (once)
+    if (!this._petClickBound) {
+      this._petClickBound = true;
+      const petWidget = document.getElementById('pet-widget');
+      if (petWidget) {
+        petWidget.addEventListener('click', () => this._onPetClick());
+      }
+    }
+
     if (total === 0) {
       this.progressText.textContent = '种下第一颗种子吧';
     } else if (pct === 100) {
@@ -1361,7 +1370,11 @@ class GreenTodo {
       { id:"celebrate_wow",p:"flower",e:"huge",m:"huge",b:true },
       { id:"celebrate_love",p:"flower",e:"heart",m:"huge",b:true },
     ];
-    if (total === 0) return states[0]; // happy seed
+    // When tapping the pet, cycle through ALL states
+    if (this._petTapping) {
+      return states[this._petTapIndex % states.length];
+    }
+    if (total === 0) return states[0];
     const pct = completed / total;
     let pool;
     if (pct >= 1.0) pool = states.filter(s => s.p === 'flower');
@@ -1371,9 +1384,28 @@ class GreenTodo {
     else if (pct >= 0.15) pool = states.filter(s => s.id.startsWith('meh'));
     else if (pct > 0) pool = states.filter(s => s.p === 'sprout');
     else pool = states.filter(s => s.p === 'seed');
-    const day = new Date().toDateString();
-    let hash = 0; for (const c of day) hash = (hash * 31 + c.charCodeAt(0)) | 0;
-    return pool[Math.abs(hash) % pool.length];
+    return pool[(completed + total) % pool.length];
+  }
+
+  _onPetClick() {
+    // Cycle through all 15 expressions on each click
+    this._petTapIndex = ((this._petTapIndex || 0) + 1);
+    this._petTapping = true;
+    const widget = document.getElementById('pet-widget');
+    widget.classList.remove('bounce');
+    void widget.offsetWidth;
+    widget.classList.add('bounce');
+    const inc = this.getIncompleteTodos().length;
+    const comp = this.getCompletedTodos().length;
+    this._updatePetWidget(inc + comp, comp);
+    try { window.electronAPI.previewPetState(this._petTapIndex % 15); } catch {}
+    // Reset to normal state after 3 seconds of no clicking
+    clearTimeout(this._petTapTimer);
+    this._petTapTimer = setTimeout(() => {
+      this._petTapping = false;
+      this._updatePetWidget(inc + comp, comp);
+      try { window.electronAPI.updateTrayProgress(inc + comp, comp); } catch {}
+    }, 3000);
   }
 
   _updatePetWidget(total, comp) {
@@ -1384,16 +1416,16 @@ class GreenTodo {
     canvas.width = W; canvas.height = H;
 
     const st = this._getPetState(total, comp);
-    const stateId = st.id;
+    const petKey = `${total}-${comp}`;
 
-    // Bounce animation on state change
-    if (this._lastPetState && this._lastPetState !== stateId) {
+    // Bounce animation on any todo change
+    if (this._lastPetKey && this._lastPetKey !== petKey) {
       const widget = document.getElementById('pet-widget');
       widget.classList.remove('bounce');
       void widget.offsetWidth;
       widget.classList.add('bounce');
     }
-    this._lastPetState = stateId;
+    this._lastPetKey = petKey;
 
     ctx.clearRect(0, 0, W, H);
     const isDark = document.getElementById('app-container').classList.contains('dark');
@@ -1401,7 +1433,7 @@ class GreenTodo {
     const fg2 = isDark ? '#7bc87b' : '#16a34a';
     const eye_fg = isDark ? '#1a2e1a' : '#14532d';
 
-    const cx = 44, bcy = 52, br = 24;
+    const cx = 44, bcy = 48, br = 22;
 
     // Body
     ctx.beginPath(); ctx.arc(cx, bcy, br, 0, Math.PI * 2);
