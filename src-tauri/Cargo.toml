@@ -1,6 +1,6 @@
 [package]
 name = "green-todo"
-version = "1.0.0"
+version = "2.0.2"
 edition = "2021"
 
 [build-dependencies]
@@ -14,3 +14,5 @@ tauri-plugin-single-instance = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 png = "0.17"
+tempfile = "3"
+chrono = "0.4"

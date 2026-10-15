@@ -1,15 +1,20 @@
 {
   "name": "green-todo",
-  "version": "1.0.0",
+  "version": "2.0.2",
   "description": "A refreshing daily todo app with satisfying animations",
   "main": "main.js",
   "author": "Xiobio",
   "license": "MIT",
   "scripts": {
-    "start": "electron .",
-    "build:win": "electron-builder --win",
-    "build:mac": "electron-builder --mac",
-    "build:all": "electron-builder --win --mac"
+    "start": "tauri dev",
+    "build:win": "tauri build --bundles nsis,msi",
+    "build:mac": "tauri build --bundles dmg",
+    "build:all": "tauri build",
+    "start:electron": "electron .",
+    "build:win:electron": "electron-builder --win",
+    "build:mac:electron": "electron-builder --mac",
+    "test": "playwright test",
+    "tauri": "tauri"
   },
   "build": {
     "appId": "com.xiobio.green-todo",
@@ -80,6 +85,8 @@
     }
   },
   "devDependencies": {
+    "@playwright/test": "^1.64.1",
+    "@tauri-apps/cli": "^2.12.3",
     "electron": "^38.8.6",
     "electron-builder": "^26.8.1"
   }

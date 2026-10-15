@@ -1,5 +1,7 @@
 mod commands;
 mod tray_icon;
+mod hotkey;
+mod storage;
 
 use tauri::{
     image::Image,
@@ -9,6 +11,24 @@ use tauri::{
     Manager,
 };
 
+fn show_main_window(app: &tauri::AppHandle) {
+    if let Some(window) = app.get_webview_window("main") {
+        let _ = window.unminimize();
+        let _ = window.show();
+        let _ = window.set_focus();
+    }
+}
+
+fn toggle_main_window(app: &tauri::AppHandle) {
+    if let Some(window) = app.get_webview_window("main") {
+        if window.is_visible().unwrap_or(false) && !window.is_minimized().unwrap_or(false) {
+            let _ = window.hide();
+        } else {
+            show_main_window(app);
+        }
+    }
+}
+
 fn create_tray_image(total: u32, completed: u32) -> Image<'static> {
     let buf = tray_icon::render_pet_icon(total, completed);
     Image::new_owned(buf.data, buf.width, buf.height)
@@ -17,15 +37,18 @@ fn create_tray_image(total: u32, completed: u32) -> Image<'static> {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
-        .plugin(tauri_plugin_dialog::init())
-        .plugin(tauri_plugin_global_shortcut::Builder::new().build())
+        .manage(hotkey::HotkeyState::default())
+        .manage(storage::StorageLock::default())
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
-            // Focus existing window on second instance
-            if let Some(w) = app.get_webview_window("main") {
-                let _ = w.show();
-                let _ = w.set_focus();
-            }
+            show_main_window(app);
         }))
+        .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_global_shortcut::Builder::new()
+            .with_handler(|app, _shortcut, event| {
+                if event.state == tauri_plugin_global_shortcut::ShortcutState::Pressed {
+                    toggle_main_window(app);
+                }
+            }).build())
         .setup(|app| {
             let window = app.get_webview_window("main").unwrap();
 
@@ -55,26 +78,22 @@ pub fn run() {
             let _tray = TrayIconBuilder::with_id("main")
                 .icon(tray_image)
                 .icon_as_template(false) // user wants pure white icon always
-                .tooltip("Green Todo - ⌥Space")
+                .tooltip("Green Todo")
                 .menu(&menu)
+                .show_menu_on_left_click(false)
                 .on_menu_event(move |app, event| {
                     match event.id().as_ref() {
                         "show_hide" => {
-                            if let Some(w) = app.get_webview_window("main") {
-                                if w.is_visible().unwrap_or(false) {
-                                    let _ = w.hide();
-                                } else {
-                                    let _ = w.show();
-                                    let _ = w.set_focus();
-                                }
-                            }
+                            toggle_main_window(app);
                         }
                         "export" => {
+                            show_main_window(app);
                             if let Some(w) = app.get_webview_window("main") {
                                 let _ = w.emit("trigger-export", ());
                             }
                         }
                         "import" => {
+                            show_main_window(app);
                             if let Some(w) = app.get_webview_window("main") {
                                 let _ = w.emit("trigger-import", ());
                             }
@@ -84,52 +103,18 @@ pub fn run() {
                     }
                 })
                 .on_tray_icon_event(|tray, event| {
-                    if let tauri::tray::TrayIconEvent::Click { .. } = event {
-                        let app = tray.app_handle();
-                        if let Some(w) = app.get_webview_window("main") {
-                            if w.is_visible().unwrap_or(false) {
-                                let _ = w.hide();
-                            } else {
-                                let _ = w.show();
-                                let _ = w.set_focus();
-                            }
-                        }
+                    if let tauri::tray::TrayIconEvent::Click {
+                        button: tauri::tray::MouseButton::Left,
+                        button_state: tauri::tray::MouseButtonState::Up,
+                        ..
+                    } = event {
+                        toggle_main_window(tray.app_handle());
                     }
                 })
                 .build(app)?;
 
             // --- Global shortcut ---
-            use tauri_plugin_global_shortcut::GlobalShortcutExt;
-            let hotkey = commands::get_hotkey(app.handle().clone());
-            let w2 = window.clone();
-            use tauri_plugin_global_shortcut::Shortcut;
-            let shortcut: Shortcut = hotkey.parse().unwrap_or("Alt+Space".parse().unwrap());
-            let result = app.global_shortcut().on_shortcut(
-                shortcut,
-                move |_app, _shortcut, event| {
-                    // Only respond to key DOWN, not release
-                    if event.state == tauri_plugin_global_shortcut::ShortcutState::Pressed {
-                        if w2.is_visible().unwrap_or(false) {
-                            let _ = w2.hide();
-                        } else {
-                            let _ = w2.show();
-                            let _ = w2.set_focus();
-                        }
-                    }
-                },
-            );
-            if result.is_err() {
-                let w3 = window.clone();
-                let _ = app.global_shortcut().on_shortcut(
-                    "CommandOrControl+Alt+T".parse::<Shortcut>().unwrap(),
-                    move |_app, _shortcut, event| {
-                        if event.state == tauri_plugin_global_shortcut::ShortcutState::Pressed {
-                            if w3.is_visible().unwrap_or(false) { let _ = w3.hide(); }
-                            else { let _ = w3.show(); let _ = w3.set_focus(); }
-                        }
-                    },
-                );
-            }
+            hotkey::initialize(app.handle());
 
             // --- Window events: close = hide ---
             let w4 = window.clone();

@@ -1185,3 +1185,10 @@ body {
   .todo-item { animation: none !important; opacity: 1; transform: none; }
   .confetti-particle, .completion-ring, .float-text, .combo-text, .success-sparkle, .screen-flash { display: none !important; }
 }
+
+.app-notice {
+  position: absolute; bottom: 78px; left: 16px; right: 16px; z-index: 1000;
+  padding: 10px 14px; border: 1px solid var(--green-400); border-radius: 8px;
+  background: var(--surface); color: var(--text); box-shadow: var(--shadow-sm);
+  font-size: 12px; line-height: 1.5; pointer-events: none;
+}
