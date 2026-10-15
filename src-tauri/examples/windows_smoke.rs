@@ -27,7 +27,7 @@ fn check(app: &tauri::AppHandle) -> Result<(), String> {
     let saved: serde_json::Value = serde_json::from_slice(&std::fs::read(&config_path).map_err(|e| e.to_string())?).map_err(|e| e.to_string())?;
     if saved["hotkey"] != "Ctrl+Shift+F11" { return Err("wrong persisted key".into()); }
     std::fs::write(&config_path, "[]").map_err(|e| e.to_string())?;
-    hotkey::set(app, "Ctrl+Shift+F12")?; // Previously indexing this config panicked.
+    hotkey::set(app, "Ctrl+Shift+F8")?; // Previously indexing this config panicked.
 
     let window = app.get_webview_window("main").ok_or("missing window")?;
     window.set_always_on_top(false).map_err(|e| e.to_string())?;

@@ -23,6 +23,7 @@ class GreenTodo {
     this._restoring = !!this._needsAsyncRestore;
     this._backupWrite = Promise.resolve();
     this._effectTimers = new Set();
+    this._completionTokens = new Map();
     this.activeTab = 'incomplete';
     this.dragItem = null;
     this.comboCount = 0;
@@ -31,7 +32,7 @@ class GreenTodo {
     this.pendingDeleteEl = null;
     this.isDarkMode = false;
     this.audioCtx = null;
-    this._muted = localStorage.getItem('green-todo-muted') === 'true';
+    this._muted = this.getSetting('green-todo-muted') === 'true';
     const rmq = window.matchMedia('(prefers-reduced-motion: reduce)');
     this._reduceMotion = rmq.matches;
     rmq.addEventListener('change', (e) => {
@@ -243,8 +244,17 @@ class GreenTodo {
   }
 
   // ---- Theme ----
+  getSetting(key) {
+    try { return localStorage.getItem(key); } catch { return null; }
+  }
+
+  setSetting(key, value) {
+    try { localStorage.setItem(key, value); }
+    catch { this.notify('设置保存失败，本次设置会在退出后重置'); }
+  }
+
   loadTheme() {
-    const saved = localStorage.getItem('green-todo-theme');
+    const saved = this.getSetting('green-todo-theme');
     if (saved === 'dark') {
       this.isDarkMode = true;
     } else if (saved === 'light') {
@@ -265,7 +275,7 @@ class GreenTodo {
 
   toggleTheme() {
     this.isDarkMode = !this.isDarkMode;
-    localStorage.setItem('green-todo-theme', this.isDarkMode ? 'dark' : 'light');
+    this.setSetting('green-todo-theme', this.isDarkMode ? 'dark' : 'light');
     this.applyTheme();
   }
 
@@ -295,6 +305,7 @@ class GreenTodo {
     document.getElementById('clip-close').addEventListener('click', () => document.getElementById('clip-panel').classList.add('hidden'));
     document.getElementById('clip-add-btn').addEventListener('click', () => this.addClipItem());
     document.getElementById('clip-input').addEventListener('keydown', (e) => {
+      if (e.isComposing || e.keyCode === 229) return;
       if (e.key === 'Enter') { e.preventDefault(); this.addClipItem(); }
     });
     document.addEventListener('click', (e) => {
@@ -747,6 +758,8 @@ class GreenTodo {
     this.updateCounts();
     this.updateProgress();
     const date = todo.date;
+    const completionToken = {};
+    this._completionTokens.set(id, completionToken);
     const wasLast = this.getIncompleteTodos().length === 0;
 
     // Combo
@@ -762,6 +775,8 @@ class GreenTodo {
     }
 
     setTimeout(() => {
+      if (this._completionTokens.get(id) !== completionToken) return;
+      this._completionTokens.delete(id);
       if (this.selectedDate !== date || !this.todos.includes(todo) || !todo.completed) return;
       this.render();
       this.announce(`已完成：${todo.text}`);
@@ -775,6 +790,7 @@ class GreenTodo {
 
   uncompleteTodo(id) {
     if (this._restoring) return;
+    this._completionTokens.delete(id);
     const todo = this.todos.find(t => t.id === id);
     if (!todo || !todo.completed) return;
     todo.completed = false;
@@ -805,21 +821,20 @@ class GreenTodo {
     this.hideDeleteConfirm();
     if (!id) return;
 
+    this._completionTokens.delete(id);
+    this.todos = this.todos.filter(t => t.id !== id);
+    this.saveTodos();
+    this.announce('任务已删除');
+
     if (el) {
       el.style.transition = 'all 0.3s ease';
       el.style.transform = 'translateX(40px) scale(0.95)';
       el.style.opacity = '0';
       setTimeout(() => {
-        this.todos = this.todos.filter(t => t.id !== id);
-        this.saveTodos();
         this.render();
-        this.announce('任务已删除');
       }, 300);
     } else {
-      this.todos = this.todos.filter(t => t.id !== id);
-      this.saveTodos();
       this.render();
-      this.announce('任务已删除');
     }
   }
 
@@ -1158,7 +1173,7 @@ class GreenTodo {
 
   toggleMute() {
     this._muted = !this._muted;
-    localStorage.setItem('green-todo-muted', this._muted);
+    this.setSetting('green-todo-muted', this._muted);
   }
 
   playSound(type, combo = 1) {
@@ -1362,7 +1377,8 @@ class GreenTodo {
   }
 
   saveClipboard() {
-    try { localStorage.setItem('green-todo-clipboard', JSON.stringify(this.clipItems)); } catch {}
+    try { localStorage.setItem('green-todo-clipboard', JSON.stringify(this.clipItems)); }
+    catch { this.notify('收藏保存失败，请复制内容另行保存，避免退出后丢失'); }
   }
 
   toggleClipPanel() {

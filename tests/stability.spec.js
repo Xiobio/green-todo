@@ -18,6 +18,9 @@ async function boot(page, options = {}) {
       localStorage.setItem('green-todo-muted', 'true');
       sessionStorage.setItem('seeded', 'true');
     }
+    if (options.failStorageRead) {
+      Storage.prototype.getItem = () => { throw new DOMException('unavailable', 'SecurityError'); };
+    }
     window.nativeCalls = [];
     window.importResult = null;
     window.__TAURI__ = {
@@ -241,4 +244,34 @@ test('动态开启减少动画后不会残留特效', async ({ page }) => {
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await expect(page.locator('#celebration-container > *')).toHaveCount(0);
   expect(await page.evaluate(() => app.todos[0].completed)).toBe(true);
+});
+
+test('删除立即保存，删除动画期间重启不会恢复任务', async ({ page }) => {
+  await boot(page, { stored: [todo('delete')] });
+  await page.locator('.todo-delete').click();
+  await page.locator('#delete-confirm-btn').click();
+  expect(await page.evaluate(() => JSON.parse(localStorage.getItem('green-todos')))).toEqual([]);
+  await page.reload();
+  await expect(page.locator('#incomplete-list .todo-item')).toHaveCount(0);
+});
+
+test('撤销再完成会使旧的动画回调失效', async ({ page }) => {
+  await boot(page, { stored: [todo('repeat')] });
+  await page.clock.install();
+  await page.evaluate(() => {
+    app.completeTodo('repeat', document.querySelector('.todo-item'));
+    app.uncompleteTodo('repeat');
+    window.celebrations = 0;
+    app.playAllDoneCelebration = () => { window.celebrations++; };
+  });
+  await page.clock.runFor(1000);
+  await page.evaluate(() => app.completeTodo('repeat', document.querySelector('.todo-item')));
+  await page.clock.runFor(2000);
+  expect(await page.evaluate(() => window.celebrations)).toBe(1);
+});
+
+test('localStorage 读取全部失败时仍能启动并恢复文件备份', async ({ page }) => {
+  await boot(page, { failStorageRead: true, backup: [todo('safe')] });
+  await expect(page.locator('#incomplete-list .todo-item')).toHaveCount(1);
+  expect(await page.evaluate(() => app.todos[0].id)).toBe('safe');
 });
