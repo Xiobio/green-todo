@@ -2,21 +2,21 @@
 
 一款清新解压的桌面每日待办工具，用植物成长隐喻让完成任务变成一件有趣的事。
 
-![Electron](https://img.shields.io/badge/Electron-28+-47848F?logo=electron&logoColor=white)
+![Tauri](https://img.shields.io/badge/Tauri-2-24C8D8?logo=tauri&logoColor=white)
 ![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20macOS%20%7C%20Linux-green)
 ![License](https://img.shields.io/badge/License-MIT-blue)
 
 ## 下载安装
 
-从 [GitHub Releases](https://github.com/Xiobio/green-todo/releases/tag/v1.0.0) 下载：
+从 [GitHub Releases](https://github.com/Xiobio/green-todo/releases/latest) 下载：
 
 | 平台 | 文件 | 说明 |
 |------|------|------|
-| **Windows** | `Green Todo Setup 1.0.0.exe` | 双击安装，自动创建桌面快捷方式 |
-| **Windows** | `GreenTodo-Portable-1.0.0.exe` | 免安装版，双击直接运行 |
-| **macOS** | `Green Todo-1.0.0.dmg` | 拖入 Applications 即可 |
+| **Windows** | `Green Todo_*_x64-setup.exe` | 双击安装，自动创建桌面快捷方式 |
+| **Windows** | `Green Todo_*_x64_en-US.msi` | MSI 安装包 |
+| **macOS** | `Green Todo_*_aarch64.dmg` / `Green Todo_*_x64.dmg` | 拖入 Applications 即可 |
 
-> 首次启动后按 **Ctrl+Space**（可自定义）呼出窗口，关闭窗口会最小化到系统托盘。
+> Windows 默认使用 **Ctrl+Space**（冲突时尝试 Ctrl+Alt+T），macOS 默认使用 Alt+Space。底部显示实际注册的组合，可点击修改。关闭窗口会隐藏到系统托盘。
 
 ## 特性
 
@@ -61,12 +61,24 @@
 git clone https://github.com/Xiobio/green-todo.git
 cd green-todo
 
-# 安装依赖
-npm install
+# 先安装 Rust stable 与系统所需的 C++ 构建工具，再安装依赖
+npm ci
 
 # 启动
 npm start
 ```
+
+## 验证与异常排查
+
+```bash
+npx playwright install chromium
+npm test
+cargo test --locked --manifest-path src-tauri/Cargo.toml --lib
+# Windows 原生快捷键与窗口测试（使用独立测试数据目录）
+cargo run --locked --manifest-path src-tauri/Cargo.toml --example windows_smoke
+```
+
+Windows 的异常日志位于 `%APPDATA%\com.xiobio.green-todo\green-todo.log`，记录原生 panic 和前端未处理异常，文件超过 512 KiB 后轮换。备份写入或快捷键注册失败会在界面提示。
 
 ## 快捷键
 
@@ -83,7 +95,7 @@ npm start
 
 ## 技术栈
 
-- **Electron 28** — 跨平台桌面框架
+- **Tauri 2 / Rust** — 当前安装版的桌面框架；根目录 Electron 文件作为旧版保留
 - **原生 HTML/CSS/JS** — 零第三方依赖
 - **Web Audio API** — 音效合成
 - **localStorage** — 数据持久化
@@ -98,6 +110,9 @@ green-todo/
 ├── index.html     # 界面结构
 ├── styles.css     # 样式（含暗色模式、动画、日历）
 ├── app.js         # 应用逻辑（GreenTodo 类）
+├── web/           # 当前 Tauri 前端（app.js、styles.css、tauri-bridge.js）
+├── src-tauri/     # Rust 后端、系统托盘、快捷键与文件持久化
+├── tests/         # 浏览器回归测试
 └── package.json
 ```
 

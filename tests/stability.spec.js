@@ -162,6 +162,16 @@ test('快捷键冲突会保留原设置，并允许继续修改', async ({ page 
   await expect(page.locator('.app-notice')).toContainText('占用');
 });
 
+test('加号等符号按物理按键录制，单独修饰键不会启用确认', async ({ page }) => {
+  await boot(page, { stored: [] });
+  await page.locator('#hotkey-badge').click();
+  await page.keyboard.press('Control');
+  await expect(page.locator('#hotkey-confirm')).toBeDisabled();
+  await page.keyboard.press('Control+Shift+Equal');
+  await page.locator('#hotkey-confirm').click();
+  expect(await page.evaluate(() => nativeCalls.find(c => c.command === 'set_hotkey').args.key)).toBe('Ctrl+Shift+Equal');
+});
+
 test('导入导出的原生调用失败会提示，且不产生未处理异常', async ({ page }) => {
   await boot(page, { stored: [] });
   await page.evaluate(async () => {

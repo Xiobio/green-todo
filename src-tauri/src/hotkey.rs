@@ -95,7 +95,7 @@ mod tests {
         assert!(parse_key(default_key()).is_ok());
         assert!(parse_key("⌥Space").is_err());
         assert!(parse_key("T").is_err());
-        for key in ["Ctrl+Shift+T", "Ctrl+Up", "Ctrl+Plus", "Super+T"] {
+        for key in ["Ctrl+Shift+T", "Ctrl+Up", "Ctrl+Shift+Equal", "Super+T"] {
             assert!(parse_key(key).is_ok(), "{key}");
         }
     }

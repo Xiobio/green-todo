@@ -1309,12 +1309,12 @@ class GreenTodo {
       if (e.altKey) parts.push('Alt');
       if (e.shiftKey) parts.push('Shift');
       if (e.metaKey) parts.push('Super');
-      const aliases = { ' ': 'Space', ArrowUp: 'Up', ArrowDown: 'Down', ArrowLeft: 'Left', ArrowRight: 'Right', '+': 'Plus' };
-      const key = /^Key[A-Z]$/.test(e.code) ? e.code.slice(3) : /^Digit\d$/.test(e.code) ? e.code.slice(5) : e.key;
-      if (!['Control', 'Alt', 'Shift', 'Meta'].includes(key)) {
+      const aliases = { ' ': 'Space', ArrowUp: 'Up', ArrowDown: 'Down', ArrowLeft: 'Left', ArrowRight: 'Right', '+': 'Equal' };
+      const key = /^Key[A-Z]$/.test(e.code) ? e.code.slice(3) : /^Digit\d$/.test(e.code) ? e.code.slice(5) : e.code || e.key;
+      if (!['Control', 'Alt', 'Shift', 'Meta', 'AltGraph'].includes(e.key)) {
         parts.push(aliases[key] || (key.length === 1 ? key.toUpperCase() : key));
       }
-      if (parts.length >= 2 && !['Control', 'Alt', 'Shift', 'Meta'].includes(e.key)) {
+      if (parts.length >= 2 && !['Control', 'Alt', 'Shift', 'Meta', 'AltGraph'].includes(e.key)) {
         const combo = parts.join('+');
         recorder.textContent = combo;
         this._pendingHotkey = combo;
