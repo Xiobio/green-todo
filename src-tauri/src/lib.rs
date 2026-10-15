@@ -2,6 +2,7 @@ mod commands;
 mod tray_icon;
 mod hotkey;
 mod storage;
+mod diagnostics;
 
 use tauri::{
     image::Image,
@@ -50,6 +51,7 @@ pub fn run() {
                 }
             }).build())
         .setup(|app| {
+            diagnostics::initialize(app.handle());
             let window = app.get_webview_window("main").unwrap();
 
             // macOS: hide from Dock, shadow, visible on all workspaces
@@ -144,6 +146,7 @@ pub fn run() {
             commands::set_hotkey,
             commands::export_data,
             commands::import_data,
+            commands::report_client_error,
         ])
         .run(tauri::generate_context!())
         .expect("error running Green Todo");

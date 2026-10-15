@@ -34,7 +34,10 @@ class GreenTodo {
     this._muted = localStorage.getItem('green-todo-muted') === 'true';
     const rmq = window.matchMedia('(prefers-reduced-motion: reduce)');
     this._reduceMotion = rmq.matches;
-    rmq.addEventListener('change', (e) => { this._reduceMotion = e.matches; });
+    rmq.addEventListener('change', (e) => {
+      this._reduceMotion = e.matches;
+      if (e.matches) this.clearCelebrations();
+    });
     this._particles = [];
     this._particleLoop = null;
     this.clipItems = this.loadClipboard();
@@ -370,7 +373,7 @@ class GreenTodo {
         const calOverlay = document.getElementById('calendar-overlay');
         const hotkeyOverlay = document.getElementById('hotkey-overlay');
         if (!hotkeyOverlay.classList.contains('hidden')) { this.closeHotkeyRecorder(); return; }
-        if (!this.deleteOverlay.classList.contains('hidden') && document.getElementById('hotkey-overlay').classList.contains('hidden')) { this.hideDeleteConfirm(); return; }
+        if (!this.deleteOverlay.classList.contains('hidden')) { this.hideDeleteConfirm(); return; }
         if (!this.modalOverlay.classList.contains('hidden')) { this.hideModal(); return; }
         if (!clipPanel.classList.contains('hidden')) { clipPanel.classList.add('hidden'); return; }
         if (!calOverlay.classList.contains('hidden')) { this.hideCalendar(); return; }
@@ -446,10 +449,21 @@ class GreenTodo {
     try { localStorage.setItem('green-todos', json); localSaved = true; }
     catch { /* Preserve the in-memory data and attempt the file backup. */ }
     if (window.electronAPI?.backupTodos) {
-      this._backupWrite = this._backupWrite.catch(() => {}).then(() => window.electronAPI.backupTodos(json)).catch((error) => {
-        console.error('[backup] save failed:', error);
-        this.notify(localSaved ? '文件备份保存失败，数据暂存于本机；建议导出备份' : '数据保存失败，请立即导出备份，避免退出后丢失');
-      });
+      this._pendingBackup = { json, localSaved };
+      if (!this._backupScheduled) {
+        this._backupScheduled = true;
+        this._backupWrite = this._backupWrite.catch(() => {}).then(async () => {
+          while (this._pendingBackup) {
+            const next = this._pendingBackup;
+            this._pendingBackup = null;
+            try { await window.electronAPI.backupTodos(next.json); }
+            catch (error) {
+              console.error('[backup] save failed:', error);
+              this.notify(next.localSaved ? '文件备份保存失败，数据暂存于本机；建议导出备份' : '数据保存失败，请立即导出备份，避免退出后丢失');
+            }
+          }
+        }).finally(() => { this._backupScheduled = false; });
+      }
     } else if (!localSaved) this.notify('数据保存失败，请导出备份');
     return localSaved;
   }
@@ -760,6 +774,7 @@ class GreenTodo {
   }
 
   uncompleteTodo(id) {
+    if (this._restoring) return;
     const todo = this.todos.find(t => t.id === id);
     if (!todo || !todo.completed) return;
     todo.completed = false;

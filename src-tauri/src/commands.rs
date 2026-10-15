@@ -4,6 +4,11 @@ use tauri::Manager;
 use tauri::image::Image;
 use crate::tray_icon;
 
+#[tauri::command]
+pub async fn report_client_error(message: String) {
+    crate::diagnostics::record(&format!("renderer: {message}"));
+}
+
 fn backup_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
     Ok(app.path().app_data_dir().map_err(|e| e.to_string())?.join("todos-backup.json"))
 }
