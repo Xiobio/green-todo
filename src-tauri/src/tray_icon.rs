@@ -477,7 +477,9 @@ mod tests {
     fn all_pet_states_remain_visible_on_light_and_dark_windows_taskbars() {
         for state in PET_STATES {
             for (total, completed) in [(0, 0), (5, 0), (5, 3), (5, 5), (100, 80)] {
-                let mut icon = render_monochrome_pet_icon(state, total, completed);
+                #[allow(unused_mut)]
+                let mut icon = render_pet_icon_for_state(state, total, completed);
+                #[cfg(target_os = "macos")]
                 colorize_pet_icon(&mut icon);
                 assert_eq!(icon.data.len(), (icon.width * icon.height * 4) as usize);
                 assert_eq!(icon.data[3], 0, "background must stay transparent");
