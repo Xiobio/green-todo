@@ -15,10 +15,15 @@ const COMBO_WINDOW_MS = 5000;
 const COMPLETION_DELAY_MS = 2000;
 const MAX_TODOS = 500;
 const DATA_RETENTION_DAYS = 30;
+const MAX_PARTICLES = 160;
 
 class GreenTodo {
   constructor() {
     this.todos = this.loadTodos();
+    this._restoring = !!this._needsAsyncRestore;
+    this._backupWrite = Promise.resolve();
+    this._effectTimers = new Set();
+    this._completionTokens = new Map();
     this.activeTab = 'incomplete';
     this.dragItem = null;
     this.comboCount = 0;
@@ -27,10 +32,13 @@ class GreenTodo {
     this.pendingDeleteEl = null;
     this.isDarkMode = false;
     this.audioCtx = null;
-    this._muted = localStorage.getItem('green-todo-muted') === 'true';
+    this._muted = this.getSetting('green-todo-muted') === 'true';
     const rmq = window.matchMedia('(prefers-reduced-motion: reduce)');
     this._reduceMotion = rmq.matches;
-    rmq.addEventListener('change', (e) => { this._reduceMotion = e.matches; });
+    rmq.addEventListener('change', (e) => {
+      this._reduceMotion = e.matches;
+      if (e.matches) this.clearCelebrations();
+    });
     this._particles = [];
     this._particleLoop = null;
     this.clipItems = this.loadClipboard();
@@ -41,6 +49,8 @@ class GreenTodo {
 
   init() {
     this.cacheDom();
+    this.container.inert = this._restoring;
+    this.container.setAttribute('aria-busy', String(this._restoring));
     this.cleanupOldTodos();
     this.loadTheme();
     this.setDateAndGreeting();
@@ -107,6 +117,7 @@ class GreenTodo {
   }
 
   navigateDate(offset) {
+    this.clearCelebrations();
     const d = new Date(this.selectedDate + 'T00:00:00');
     d.setDate(d.getDate() + offset);
     this.selectedDate = this.dateToKey(d);
@@ -115,6 +126,7 @@ class GreenTodo {
   }
 
   goToToday() {
+    this.clearCelebrations();
     this.selectedDate = this.getTodayKey();
     this.updateDateNav();
     this.hideCalendar();
@@ -191,6 +203,7 @@ class GreenTodo {
     btn.textContent = day;
     if (dateKey) {
       btn.addEventListener('click', () => {
+        this.clearCelebrations();
         this.selectedDate = dateKey;
         this.updateDateNav();
         this.hideCalendar();
@@ -211,6 +224,7 @@ class GreenTodo {
     setInterval(() => this.checkDateChange(), 60000);
     document.addEventListener('visibilitychange', () => {
       if (!document.hidden) this.checkDateChange();
+      else this.clearCelebrations();
     });
   }
 
@@ -223,14 +237,24 @@ class GreenTodo {
       if (this.selectedDate === oldKey) {
         this.selectedDate = newKey;
       }
+      this.clearCelebrations();
       this.setDateAndGreeting();
       this.render();
     }
   }
 
   // ---- Theme ----
+  getSetting(key) {
+    try { return localStorage.getItem(key); } catch { return null; }
+  }
+
+  setSetting(key, value) {
+    try { localStorage.setItem(key, value); }
+    catch { this.notify('设置保存失败，本次设置会在退出后重置'); }
+  }
+
   loadTheme() {
-    const saved = localStorage.getItem('green-todo-theme');
+    const saved = this.getSetting('green-todo-theme');
     if (saved === 'dark') {
       this.isDarkMode = true;
     } else if (saved === 'light') {
@@ -251,7 +275,7 @@ class GreenTodo {
 
   toggleTheme() {
     this.isDarkMode = !this.isDarkMode;
-    localStorage.setItem('green-todo-theme', this.isDarkMode ? 'dark' : 'light');
+    this.setSetting('green-todo-theme', this.isDarkMode ? 'dark' : 'light');
     this.applyTheme();
   }
 
@@ -281,6 +305,7 @@ class GreenTodo {
     document.getElementById('clip-close').addEventListener('click', () => document.getElementById('clip-panel').classList.add('hidden'));
     document.getElementById('clip-add-btn').addEventListener('click', () => this.addClipItem());
     document.getElementById('clip-input').addEventListener('keydown', (e) => {
+      if (e.isComposing || e.keyCode === 229) return;
       if (e.key === 'Enter') { e.preventDefault(); this.addClipItem(); }
     });
     document.addEventListener('click', (e) => {
@@ -300,15 +325,16 @@ class GreenTodo {
     this.confirmBtn.addEventListener('click', () => this.addTodoFromInput());
     this.modalOverlay.addEventListener('click', (e) => { if (e.target === this.modalOverlay) this.hideModal(); });
     this.todoInput.addEventListener('keydown', (e) => {
+      if (e.isComposing || e.keyCode === 229) return;
       if (e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); this.addTodoFromInput(); }
-      if (e.key === 'Escape') this.hideModal();
+      if (e.key === 'Escape') { e.stopPropagation(); this.hideModal(); }
     });
     this.hideBtn.addEventListener('click', () => { if (window.electronAPI) window.electronAPI.hideWindow(); });
     this.closeBtn.addEventListener('click', () => { if (window.electronAPI) window.electronAPI.hideWindow(); });
     this.themeBtn.addEventListener('click', () => this.toggleTheme());
     document.getElementById('export-btn').addEventListener('click', () => this.exportTodos());
-    if (window.electronAPI.onTriggerExport) window.electronAPI.onTriggerExport(() => this.exportTodos());
-    if (window.electronAPI.onTriggerImport) window.electronAPI.onTriggerImport(() => this.importTodos());
+    if (window.electronAPI?.onTriggerExport) window.electronAPI.onTriggerExport(() => this.exportTodos());
+    if (window.electronAPI?.onTriggerImport) window.electronAPI.onTriggerImport(() => this.importTodos());
     this.muteBtn = document.getElementById('mute-btn');
     this.muteBtn.addEventListener('click', () => {
       this.toggleMute();
@@ -336,12 +362,14 @@ class GreenTodo {
 
     // Keyboard shortcuts
     document.addEventListener('keydown', (e) => {
+      if (e.defaultPrevented || e.isComposing || e.keyCode === 229 || this._restoring) return;
       const inInput = document.activeElement && (document.activeElement.tagName === 'INPUT' || document.activeElement.tagName === 'TEXTAREA');
-      if (!inInput && this.modalOverlay.classList.contains('hidden') && this.deleteOverlay.classList.contains('hidden')) {
-        if (e.key === 'n' || e.key === 'N') { e.preventDefault(); this.showModal(); }
-        if (e.key === 'i' || e.key === 'I') { e.preventDefault(); this.importTodos(); }
-        if (e.key === '1') this.switchTab('incomplete');
-        if (e.key === '2') this.switchTab('completed');
+      if (!inInput && this.modalOverlay.classList.contains('hidden') && this.deleteOverlay.classList.contains('hidden') && document.getElementById('hotkey-overlay').classList.contains('hidden')) {
+        const plainKey = !e.ctrlKey && !e.altKey && !e.metaKey;
+        if (plainKey && (e.key === 'n' || e.key === 'N')) { e.preventDefault(); this.showModal(); }
+        if (plainKey && (e.key === 'i' || e.key === 'I')) { e.preventDefault(); this.importTodos(); }
+        if (plainKey && e.key === '1') this.switchTab('incomplete');
+        if (plainKey && e.key === '2') this.switchTab('completed');
         // Alt+Up/Down to reorder focused todo
         if (e.altKey && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
           const focused = document.activeElement?.closest('.todo-item');
@@ -366,73 +394,89 @@ class GreenTodo {
   }
 
   // ---- Data ----
-  loadTodos() {
-    try {
-      let data = localStorage.getItem('green-todos');
-
-      // If localStorage is empty, try to restore from file backup
-      if (!data && window.electronAPI && window.electronAPI.loadTodosBackup) {
-        // loadTodosBackup is async (ipcRenderer.invoke), but constructor needs sync data.
-        // We'll trigger async restore separately. For now return [] and restore later.
-        this._needsAsyncRestore = true;
-      }
-
-      if (!data) return [];
-      const parsed = JSON.parse(data);
-      if (!Array.isArray(parsed)) return [];
-      let needSave = false;
-      const today = new Date();
-      const todayKey = `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,'0')}-${String(today.getDate()).padStart(2,'0')}`;
-      parsed.forEach((t, i) => {
-        if (t.order === undefined) { t.order = i; needSave = true; }
-        if (!t.date && t.createdAt) { t.date = t.createdAt.slice(0, 10); needSave = true; }
-        if (!t.date) { t.date = todayKey; needSave = true; }
-        if (!t.createdAt) { t.createdAt = today.toISOString(); needSave = true; }
-        if (t.completed && !t.completedAt) { t.completedAt = t.createdAt; needSave = true; }
-      });
-      if (needSave) { try { localStorage.setItem('green-todos', JSON.stringify(parsed)); } catch {} }
-      return parsed;
-    } catch { return []; }
+  normalizeTodos(records) {
+    if (!Array.isArray(records)) throw new Error('待办数据必须是数组');
+    const ids = new Set();
+    const now = new Date().toISOString();
+    return records.flatMap((record, index) => {
+      if (!record || typeof record !== 'object' || typeof record.text !== 'string' || !record.text.trim()) return [];
+      const id = typeof record.id === 'string' || typeof record.id === 'number' ? String(record.id) : crypto.randomUUID();
+      if (!id || ids.has(id)) return [];
+      ids.add(id);
+      const createdAt = typeof record.createdAt === 'string' && Number.isFinite(Date.parse(record.createdAt)) ? record.createdAt : now;
+      const date = typeof record.date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(record.date) && this.dateToKey(new Date(record.date + 'T00:00:00')) === record.date
+        ? record.date : this.dateToKey(new Date(createdAt));
+      const completed = record.completed === true;
+      return [{ id, text: record.text.trim().slice(0, 200), date, createdAt, completed,
+        completedAt: completed ? (typeof record.completedAt === 'string' && Number.isFinite(Date.parse(record.completedAt)) ? record.completedAt : createdAt) : null,
+        order: Number.isFinite(record.order) ? record.order : index }];
+    });
   }
 
-  // Called after constructor if localStorage was empty — tries to restore from file backup
+  loadTodos() {
+    try {
+      const data = localStorage.getItem('green-todos');
+      if (data !== null) {
+        const parsed = JSON.parse(data);
+        const normalized = this.normalizeTodos(parsed);
+        if (parsed.length && !normalized.length) throw new Error('没有有效的待办数据');
+        return normalized;
+      }
+    } catch { this._storageReadFailed = true; }
+    this._needsAsyncRestore = !!window.electronAPI?.loadTodosBackup;
+    return [];
+  }
+
   async tryRestoreFromBackup() {
     if (!this._needsAsyncRestore) return;
     this._needsAsyncRestore = false;
     try {
       const backupData = await window.electronAPI.loadTodosBackup();
       if (backupData) {
-        const parsed = JSON.parse(backupData);
-        if (Array.isArray(parsed) && parsed.length > 0) {
+        const parsed = this.normalizeTodos(JSON.parse(backupData));
+        if (parsed.length > 0) {
           this.todos = parsed;
-          localStorage.setItem('green-todos', backupData);
-          this.render();
           this.announce(`已从备份恢复 ${parsed.length} 条待办`);
-          console.log(`[backup] restored ${parsed.length} todos from file backup`);
         }
+      } else if (this._storageReadFailed) {
+        this.notify('本地数据读取失败，未找到可用备份；请尝试导入此前导出的文件');
       }
     } catch (e) {
       console.error('[backup] restore failed:', e);
+      this.notify('备份恢复失败，请检查数据目录或导入此前导出的文件');
+    } finally {
+      this._restoring = false;
+      this.container.inert = false;
+      this.container.setAttribute('aria-busy', 'false');
+      if (this.todos.length) { this.cleanupOldTodos(); this.saveTodos(); }
+      this.render();
     }
   }
 
   saveTodos() {
+    if (this._restoring) return false;
     const json = JSON.stringify(this.todos);
-    // 1. Write to localStorage (fast, in-memory)
-    try {
-      localStorage.setItem('green-todos', json);
-    } catch (e) {
-      if (e.name === 'QuotaExceededError') {
-        this.cleanupOldTodos(7);
-        try { localStorage.setItem('green-todos', JSON.stringify(this.todos)); } catch {}
+    let localSaved = false;
+    try { localStorage.setItem('green-todos', json); localSaved = true; }
+    catch { /* Preserve the in-memory data and attempt the file backup. */ }
+    if (window.electronAPI?.backupTodos) {
+      this._pendingBackup = { json, localSaved };
+      if (!this._backupScheduled) {
+        this._backupScheduled = true;
+        this._backupWrite = this._backupWrite.catch(() => {}).then(async () => {
+          while (this._pendingBackup) {
+            const next = this._pendingBackup;
+            this._pendingBackup = null;
+            try { await window.electronAPI.backupTodos(next.json); }
+            catch (error) {
+              console.error('[backup] save failed:', error);
+              this.notify(next.localSaved ? '文件备份保存失败，数据暂存于本机；建议导出备份' : '数据保存失败，请立即导出备份，避免退出后丢失');
+            }
+          }
+        }).finally(() => { this._backupScheduled = false; });
       }
-    }
-    // 2. Write to file backup via IPC (atomic write, survives kill -9)
-    try {
-      if (window.electronAPI && window.electronAPI.backupTodos) {
-        window.electronAPI.backupTodos(json);
-      }
-    } catch {}
+    } else if (!localSaved) this.notify('数据保存失败，请导出备份');
+    return localSaved;
   }
 
   cleanupOldTodos(days = DATA_RETENTION_DAYS) {
@@ -440,7 +484,7 @@ class GreenTodo {
     cutoff.setDate(cutoff.getDate() - days);
     const cutoffKey = `${cutoff.getFullYear()}-${String(cutoff.getMonth()+1).padStart(2,'0')}-${String(cutoff.getDate()).padStart(2,'0')}`;
     const before = this.todos.length;
-    this.todos = this.todos.filter(t => t.date >= cutoffKey);
+    this.todos = this.todos.filter(t => !t.completed || t.date >= cutoffKey);
     if (this.todos.length !== before) this.saveTodos();
   }
 
@@ -450,7 +494,7 @@ class GreenTodo {
   }
 
   getIncompleteTodos() {
-    return this.todos.filter(t => !t.completed && !t._completing && t.date === this.selectedDate)
+    return this.todos.filter(t => !t.completed && t.date === this.selectedDate)
       .sort((a, b) => a.order - b.order);
   }
 
@@ -465,6 +509,7 @@ class GreenTodo {
 
   // ---- Tab ----
   switchTab(tab) {
+    this.clearCelebrations();
     if (this.activeTab === tab) return;
     this.activeTab = tab;
     this.tabIncomplete.classList.toggle('active', tab === 'incomplete');
@@ -487,21 +532,32 @@ class GreenTodo {
   }
 
   renderIncomplete() {
-    const todos = this.getIncompleteTodos();
-    this.incompleteList.innerHTML = '';
-    todos.forEach((todo, i) => {
-      const el = this.createIncompleteItem(todo, i);
-      this.incompleteList.appendChild(el);
-    });
+    this.reconcileList(this.incompleteList, this.getIncompleteTodos(), (todo, i) => this.createIncompleteItem(todo, i));
   }
 
   renderCompleted() {
-    const todos = this.getCompletedTodos();
-    this.completedList.innerHTML = '';
-    todos.forEach(todo => {
-      const el = this.createCompletedItem(todo);
-      this.completedList.appendChild(el);
+    this.reconcileList(this.completedList, this.getCompletedTodos(), todo => this.createCompletedItem(todo));
+  }
+
+  reconcileList(list, todos, create) {
+    const existing = new Map(Array.from(list.children, node => [node.dataset.id, node]));
+    let cursor = list.firstChild;
+    todos.forEach((todo, index) => {
+      const key = JSON.stringify([todo.text, todo.createdAt, todo.completedAt]);
+      let node = existing.get(todo.id);
+      if (node && node._renderKey !== key && !node.contains(document.activeElement)) {
+        const old = node;
+        node = create(todo, index);
+        old.replaceWith(node);
+        if (cursor === old) cursor = node;
+      }
+      if (!node) node = create(todo, index);
+      node._renderKey = key;
+      if (node !== cursor) list.insertBefore(node, cursor);
+      cursor = node.nextSibling;
+      existing.delete(todo.id);
     });
+    existing.forEach(node => node.remove());
   }
 
   createIncompleteItem(todo, index) {
@@ -568,7 +624,11 @@ class GreenTodo {
     this.progressFill.style.width = `${pct}%`;
 
     // Update menu bar pet + battery icon
-    try { window.electronAPI.updateTrayProgress(total, comp); } catch {}
+    const progressKey = `${total}-${comp}`;
+    if (this._lastTrayProgress !== progressKey) {
+      this._lastTrayProgress = progressKey;
+      try { window.electronAPI?.updateTrayProgress(total, comp); } catch {}
+    }
     // Update in-app pet widget
     try { this._updatePetWidget(total, comp); } catch {}
 
@@ -656,16 +716,16 @@ class GreenTodo {
   addTodoFromInput() {
     const text = this.todoInput.value.trim();
     if (!text) return;
-    this.hideModal();
-    this.addTodo(text);
+    if (this.addTodo(text)) this.hideModal();
   }
 
   addTodo(text) {
+    if (this._restoring) return false;
     if (typeof text !== 'string') return;
     text = text.trim();
     if (!text) return;
     if (text.length > 200) text = text.substring(0, 200);
-    if (this.todos.length >= MAX_TODOS) return;
+    if (this.todos.length >= MAX_TODOS) { this.notify('最多保存 500 条待办，请先导出并整理历史任务'); return false; }
 
     const todo = {
       id: Date.now().toString(36) + Math.random().toString(36).slice(2, 7),
@@ -674,7 +734,7 @@ class GreenTodo {
       date: this.selectedDate,
       createdAt: new Date().toISOString(),
       completedAt: null,
-      order: this.getIncompleteTodos().length,
+      order: Math.max(-1, ...this.getIncompleteTodos().map(t => t.order)) + 1,
     };
     this.todos.push(todo);
     this._justAddedId = todo.id;
@@ -685,46 +745,57 @@ class GreenTodo {
     this.announce(`已添加：${text}`);
     // Clear the flag after animation
     setTimeout(() => { this._justAddedId = null; }, 1000);
+    return true;
   }
 
   completeTodo(id, element) {
     const todo = this.todos.find(t => t.id === id);
-    if (!todo || todo.completed || todo._completing) return;
-    todo._completing = true;
+    if (this._restoring || !todo || todo.completed) return;
+    // Save before optional effects, so a restart cannot strand an animation lock.
+    todo.completed = true;
+    todo.completedAt = new Date().toISOString();
+    this.saveTodos();
+    this.updateCounts();
+    this.updateProgress();
+    const date = todo.date;
+    const completionToken = {};
+    this._completionTokens.set(id, completionToken);
+    const wasLast = this.getIncompleteTodos().length === 0;
 
     // Combo
     const now = Date.now();
     this.comboCount = (now - this.lastCompleteTime < COMBO_WINDOW_MS) ? this.comboCount + 1 : 1;
     this.lastCompleteTime = now;
 
-    this.playSound('complete', this.comboCount);
-    if (!this._reduceMotion) this.playCelebration(element, this.comboCount);
+    this.playSound('complete', Math.min(this.comboCount, 5));
+    if (!this._reduceMotion && !document.hidden) this.playCelebration(element, Math.min(this.comboCount, 5));
     else {
       const checkBtn = element.querySelector('.todo-check');
       if (checkBtn) checkBtn.innerHTML = `<svg viewBox="0 0 28 28" width="28" height="28"><circle cx="14" cy="14" r="12" fill="#22c55e" opacity="0.2"/><path d="M8 14L12 18L20 10" stroke="#22c55e" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg>`;
     }
 
     setTimeout(() => {
-      todo.completed = true;
-      todo.completedAt = new Date().toISOString();
-      delete todo._completing;
-      this.saveTodos();
+      if (this._completionTokens.get(id) !== completionToken) return;
+      this._completionTokens.delete(id);
+      if (this.selectedDate !== date || !this.todos.includes(todo) || !todo.completed) return;
       this.render();
       this.announce(`已完成：${todo.text}`);
 
       // Check all-done
-      if (this.getIncompleteTodos().length === 0 && this.getCompletedTodos().length > 0) {
-        this.playAllDoneCelebration();
+      if (wasLast && this.getIncompleteTodos().length === 0 && this.getCompletedTodos().length > 0) {
+        this.playAllDoneCelebration(date);
       }
-    }, COMPLETION_DELAY_MS);
+    }, this._reduceMotion ? 0 : COMPLETION_DELAY_MS);
   }
 
   uncompleteTodo(id) {
+    if (this._restoring) return;
+    this._completionTokens.delete(id);
     const todo = this.todos.find(t => t.id === id);
     if (!todo || !todo.completed) return;
     todo.completed = false;
     todo.completedAt = null;
-    todo.order = this.getIncompleteTodos().length;
+    todo.order = Math.max(-1, ...this.getIncompleteTodos().filter(t => t !== todo).map(t => t.order)) + 1;
     this.saveTodos();
     this.render();
   }
@@ -750,21 +821,20 @@ class GreenTodo {
     this.hideDeleteConfirm();
     if (!id) return;
 
+    this._completionTokens.delete(id);
+    this.todos = this.todos.filter(t => t.id !== id);
+    this.saveTodos();
+    this.announce('任务已删除');
+
     if (el) {
       el.style.transition = 'all 0.3s ease';
       el.style.transform = 'translateX(40px) scale(0.95)';
       el.style.opacity = '0';
       setTimeout(() => {
-        this.todos = this.todos.filter(t => t.id !== id);
-        this.saveTodos();
         this.render();
-        this.announce('任务已删除');
       }, 300);
     } else {
-      this.todos = this.todos.filter(t => t.id !== id);
-      this.saveTodos();
       this.render();
-      this.announce('任务已删除');
     }
   }
 
@@ -818,14 +888,12 @@ class GreenTodo {
     if (idx === -1) return;
     const newIdx = idx + direction;
     if (newIdx < 0 || newIdx >= todos.length) return;
-    // Swap order values
-    const a = this.todos.find(t => t.id === todos[idx].id);
-    const b = this.todos.find(t => t.id === todos[newIdx].id);
-    if (a && b) { const tmp = a.order; a.order = b.order; b.order = tmp; }
+    [todos[idx], todos[newIdx]] = [todos[newIdx], todos[idx]];
+    todos.forEach((todo, index) => { todo.order = index; });
     this.saveTodos();
     this.renderIncomplete();
     // Re-focus the moved item
-    const movedEl = this.incompleteList.querySelector(`[data-id="${id}"]`);
+    const movedEl = Array.from(this.incompleteList.children).find(el => el.dataset.id === id);
     if (movedEl) {
       const btn = movedEl.querySelector('.todo-check');
       if (btn) btn.focus();
@@ -835,6 +903,7 @@ class GreenTodo {
 
   // ---- Modal ----
   showModal() {
+    if (this._restoring) return;
     this._lastFocused = document.activeElement;
     this.modalOverlay.classList.remove('hidden');
     this.todoInput.value = '';
@@ -857,7 +926,28 @@ class GreenTodo {
   //  CELEBRATION SYSTEM v2
   // ==============================
 
+  scheduleEffect(callback, delay) {
+    if (this._reduceMotion || document.hidden) return;
+    const timer = setTimeout(() => {
+      this._effectTimers.delete(timer);
+      if (!this._reduceMotion && !document.hidden) callback();
+    }, delay);
+    this._effectTimers.add(timer);
+    return timer;
+  }
+
+  clearCelebrations() {
+    this._effectTimers.forEach(timer => clearTimeout(timer));
+    this._effectTimers.clear();
+    if (this._particleLoop) cancelAnimationFrame(this._particleLoop);
+    this._particleLoop = null;
+    this._particles = [];
+    this.celebrationContainer.replaceChildren();
+    this.container.style.animation = '';
+  }
+
   playCelebration(element, combo = 1) {
+    if (this._effectTimers.size >= 40) return;
     const rect = element.getBoundingClientRect();
     const cr = this.celebrationContainer.getBoundingClientRect();
     const x = rect.left - cr.left + 30;
@@ -871,7 +961,7 @@ class GreenTodo {
     }
 
     // Phase 2: Burst (300ms)
-    setTimeout(() => {
+    this.scheduleEffect(() => {
       element.classList.add('golden-glow');
       this.createScreenFlash(x, y);
       this.createRingBurst(x, y, combo);
@@ -879,38 +969,38 @@ class GreenTodo {
 
     // Phase 3: Explosion (500ms)
     const particleCount = Math.min(25 + combo * 10, 80);
-    setTimeout(() => {
+    this.scheduleEffect(() => {
       this.createConfettiExplosion(x, y, particleCount, combo);
       this.createFloatText(x, y - 10, combo);
       if (combo > 1) this.createComboText(x, y - 30, combo);
     }, 500);
 
     // Phase 4: Sparkles (800ms)
-    setTimeout(() => {
+    this.scheduleEffect(() => {
       for (let i = 0; i < 3 + combo; i++) {
-        setTimeout(() => {
+        this.scheduleEffect(() => {
           this.createSparkle(x + (Math.random()-0.5)*80, y + (Math.random()-0.5)*40);
         }, i * 100);
       }
     }, 800);
 
     // Phase 5: Exit (1400ms)
-    setTimeout(() => { element.classList.add('completing-exit'); }, 1400);
+    this.scheduleEffect(() => { element.classList.add('completing-exit'); }, 1400);
 
     // Combo screen shake
     if (combo >= 3) {
-      setTimeout(() => {
+      this.scheduleEffect(() => {
         this.container.style.animation = 'screenShake 0.3s ease-out';
-        setTimeout(() => { this.container.style.animation = ''; }, 300);
+        this.scheduleEffect(() => { this.container.style.animation = ''; }, 300);
       }, 500);
     }
   }
 
-  playAllDoneCelebration() {
+  playAllDoneCelebration(date = this.selectedDate) {
     if (this._reduceMotion) { this.playSound('allDone'); return; }
     const cr = this.celebrationContainer.getBoundingClientRect();
     const cx = cr.width / 2, cy = cr.height * 0.45;
-    setTimeout(() => {
+    this.scheduleEffect(() => {
       this.createConfettiExplosion(cx, cy, 80, 5);
       this.createRingBurst(cx, cy, 5);
       this.createScreenFlash(cx, cy);
@@ -921,9 +1011,11 @@ class GreenTodo {
       text.style.top = `${cy}px`;
       text.style.fontSize = '18px';
       this.celebrationContainer.appendChild(text);
-      setTimeout(() => text.remove(), 1500);
+      this.scheduleEffect(() => text.remove(), 1500);
       this.playSound('allDone');
-      setTimeout(() => this.switchTab('completed'), 1800);
+      this.scheduleEffect(() => {
+        if (this.selectedDate === date && this.getIncompleteTodos().length === 0 && this.modalOverlay.classList.contains('hidden') && !this.incompleteList.querySelector('input')) this.switchTab('completed');
+      }, 1800);
     }, 400);
   }
 
@@ -934,14 +1026,14 @@ class GreenTodo {
     flash.style.setProperty('--flash-x', `${(x/c.offsetWidth)*100}%`);
     flash.style.setProperty('--flash-y', `${(y/c.offsetHeight)*100}%`);
     c.appendChild(flash);
-    setTimeout(() => flash.remove(), 600);
+    this.scheduleEffect(() => flash.remove(), 600);
   }
 
   createRingBurst(x, y, combo = 1) {
     const count = Math.min(3 + Math.floor(combo / 2), 5);
     const colors = ['#22c55e','#4ade80','#fbbf24','#86efac','#fcd34d'];
     for (let i = 0; i < count; i++) {
-      setTimeout(() => {
+      this.scheduleEffect(() => {
         const ring = document.createElement('div');
         ring.className = 'completion-ring';
         ring.style.left = `${x}px`;
@@ -951,7 +1043,7 @@ class GreenTodo {
         ring.style.borderColor = colors[i % colors.length];
         ring.style.animationDuration = `${0.5 + i * 0.12}s`;
         this.celebrationContainer.appendChild(ring);
-        setTimeout(() => ring.remove(), 900);
+        this.scheduleEffect(() => ring.remove(), 900);
       }, i * 80);
     }
   }
@@ -967,11 +1059,12 @@ class GreenTodo {
     const shapes = ['particle-circle','particle-star','particle-leaf'];
 
     for (let i = 0; i < count; i++) {
-      setTimeout(() => this.launchParticle(x, y, colors, shapes, combo), Math.random() * 100);
+      this.launchParticle(x, y, colors, shapes, combo);
     }
   }
 
   launchParticle(ox, oy, colors, shapes, combo) {
+    if (this._particles.length >= MAX_PARTICLES || document.hidden || this._reduceMotion) return;
     const el = document.createElement('div');
     const shape = shapes[Math.floor(Math.random() * shapes.length)];
     el.className = `confetti-particle ${shape}`;
@@ -1045,7 +1138,7 @@ class GreenTodo {
     text.style.top = `${y}px`;
     if (combo >= 3) text.style.fontSize = '18px';
     this.celebrationContainer.appendChild(text);
-    setTimeout(() => text.remove(), 1300);
+    this.scheduleEffect(() => text.remove(), 1300);
   }
 
   createComboText(x, y, combo) {
@@ -1057,7 +1150,7 @@ class GreenTodo {
     text.style.top = `${y}px`;
     text.style.fontSize = `${Math.min(14 + combo * 3, 30)}px`;
     this.celebrationContainer.appendChild(text);
-    setTimeout(() => text.remove(), 1600);
+    this.scheduleEffect(() => text.remove(), 1600);
   }
 
   createSparkle(x, y) {
@@ -1067,7 +1160,7 @@ class GreenTodo {
     sparkle.style.left = `${x - 8}px`;
     sparkle.style.top = `${y - 8}px`;
     this.celebrationContainer.appendChild(sparkle);
-    setTimeout(() => sparkle.remove(), 700);
+    this.scheduleEffect(() => sparkle.remove(), 700);
   }
 
   // ---- Sound (Web Audio API) ----
@@ -1080,7 +1173,7 @@ class GreenTodo {
 
   toggleMute() {
     this._muted = !this._muted;
-    localStorage.setItem('green-todo-muted', this._muted);
+    this.setSetting('green-todo-muted', this._muted);
   }
 
   playSound(type, combo = 1) {
@@ -1149,10 +1242,21 @@ class GreenTodo {
     const commit = () => {
       const v = input.value.trim();
       if (v && v !== todo.text) { todo.text = v; this.saveTodos(); this.announce(`已修改：${v}`); }
-      this.renderIncomplete();
+      const span = document.createElement('span');
+      span.className = 'todo-text';
+      span.textContent = todo.text;
+      span.addEventListener('dblclick', () => this.startEdit(id, span));
+      input.replaceWith(span);
+      const row = span.closest('.todo-item');
+      if (row) {
+        row._renderKey = JSON.stringify([todo.text, todo.createdAt, todo.completedAt]);
+        row.querySelector('.todo-check').setAttribute('aria-label', `完成: ${todo.text}`);
+        row.querySelector('.todo-delete').setAttribute('aria-label', `删除: ${todo.text}`);
+      }
     };
     input.addEventListener('blur', commit);
     input.addEventListener('keydown', (e) => {
+      if (e.isComposing || e.keyCode === 229) return;
       if (e.key === 'Enter') { e.preventDefault(); input.blur(); }
       if (e.key === 'Escape') { e.stopPropagation(); input.value = todo.text; input.blur(); }
     });
@@ -1160,45 +1264,47 @@ class GreenTodo {
 
   // ---- Export ----
   async exportTodos() {
-    if (!window.electronAPI || !window.electronAPI.exportData) return;
-    const data = JSON.stringify(this.todos, null, 2);
-    const result = await window.electronAPI.exportData(data);
-    if (result && result.success) this.announce('数据已导出');
+    if (this._restoring || !window.electronAPI?.exportData) return;
+    try {
+      const result = await window.electronAPI.exportData(JSON.stringify(this.todos, null, 2));
+      if (result?.success) this.notify('数据已导出');
+      else if (result?.error) this.notify(`导出失败：${result.error}`);
+    } catch { this.notify('导出失败，请检查文件权限后重试'); }
   }
 
   async importTodos() {
-    if (!window.electronAPI || !window.electronAPI.importData) return;
-    const result = await window.electronAPI.importData();
-    if (!result || !result.success) return;
+    if (this._restoring || !window.electronAPI?.importData) return;
     try {
-      const imported = JSON.parse(result.data);
-      if (!Array.isArray(imported)) { this.announce('导入失败：数据格式错误'); return; }
-      // Merge: add imported todos that don't exist by ID
+      const result = await window.electronAPI.importData();
+      if (!result?.success) { if (result?.error) this.notify(`导入失败：${result.error}`); return; }
+      const imported = this.normalizeTodos(JSON.parse(result.data));
       const existingIds = new Set(this.todos.map(t => t.id));
       let added = 0;
       imported.forEach(t => {
-        if (t && t.id && t.text && !existingIds.has(t.id)) {
-          this.todos.push(t);
-          existingIds.add(t.id);
-          added++;
+        if (!existingIds.has(t.id) && this.todos.length < MAX_TODOS) {
+          this.todos.push(t); existingIds.add(t.id); added++;
         }
       });
       this.saveTodos();
       this.render();
-      this.announce(`已导入 ${added} 条待办`);
-    } catch { this.announce('导入失败：文件解析错误'); }
+      this.notify(`已导入 ${added} 条待办${this.todos.length >= MAX_TODOS ? '（已达 500 条上限）' : ''}`);
+    } catch { this.notify('导入失败：数据格式错误，请检查 JSON 文件'); }
   }
 
-  // ---- Hotkey Settings ----
   async initHotkey() {
-    if (!window.electronAPI || !window.electronAPI.getHotkey) return;
-    const key = await window.electronAPI.getHotkey();
+    if (!window.electronAPI?.getHotkey) return;
+    let key;
+    try { key = await window.electronAPI.getHotkey(); }
+    catch { this.notify('读取快捷键失败，请重新设置'); }
     this._currentHotkey = key;
-    document.getElementById('hotkey-text').textContent = key;
-    document.getElementById('hide-btn').title = `隐藏 (${key})`;
+    document.getElementById('hotkey-text').textContent = key || '设置快捷键';
+    document.getElementById('hide-btn').title = key ? `隐藏 (${key})` : '隐藏到托盘';
+    if (!key) this.notify('全局快捷键不可用，请点击底部快捷键按钮更换组合');
   }
 
   openHotkeyRecorder() {
+    if (this._hotkeyHandler) this.closeHotkeyRecorder();
+    this._hotkeyLastFocused = document.activeElement;
     const overlay = document.getElementById('hotkey-overlay');
     const recorder = document.getElementById('hotkey-recorder');
     const confirmBtn = document.getElementById('hotkey-confirm');
@@ -1209,18 +1315,21 @@ class GreenTodo {
     this._pendingHotkey = null;
 
     this._hotkeyHandler = (e) => {
+      if (e.isComposing || e.keyCode === 229) return;
       e.preventDefault();
       e.stopPropagation();
+      if (e.key === 'Escape') { this.closeHotkeyRecorder(); return; }
       const parts = [];
       if (e.ctrlKey) parts.push('Ctrl');
       if (e.altKey) parts.push('Alt');
       if (e.shiftKey) parts.push('Shift');
-      if (e.metaKey) parts.push('Meta');
-      const key = e.key;
-      if (!['Control', 'Alt', 'Shift', 'Meta'].includes(key)) {
-        parts.push(key === ' ' ? 'Space' : key.length === 1 ? key.toUpperCase() : key);
+      if (e.metaKey) parts.push('Super');
+      const aliases = { ' ': 'Space', ArrowUp: 'Up', ArrowDown: 'Down', ArrowLeft: 'Left', ArrowRight: 'Right', '+': 'Equal' };
+      const key = /^Key[A-Z]$/.test(e.code) ? e.code.slice(3) : /^Digit\d$/.test(e.code) ? e.code.slice(5) : e.code || e.key;
+      if (!['Control', 'Alt', 'Shift', 'Meta', 'AltGraph'].includes(e.key)) {
+        parts.push(aliases[key] || (key.length === 1 ? key.toUpperCase() : key));
       }
-      if (parts.length >= 2 && !['Control', 'Alt', 'Shift', 'Meta'].includes(e.key)) {
+      if (parts.length >= 2 && !['Control', 'Alt', 'Shift', 'Meta', 'AltGraph'].includes(e.key)) {
         const combo = parts.join('+');
         recorder.textContent = combo;
         this._pendingHotkey = combo;
@@ -1238,32 +1347,38 @@ class GreenTodo {
       this._hotkeyHandler = null;
     }
     this._pendingHotkey = null;
+    this._hotkeyLastFocused?.focus();
+    this._hotkeyLastFocused = null;
   }
 
   async confirmHotkey() {
     if (!this._pendingHotkey || !window.electronAPI) return;
-    const result = await window.electronAPI.setHotkey(this._pendingHotkey);
-    if (result.success) {
-      this._currentHotkey = result.hotkey;
-      document.getElementById('hotkey-text').textContent = result.hotkey;
-      document.getElementById('hide-btn').title = `隐藏 (${result.hotkey})`;
-      this.announce(`快捷键已设为 ${result.hotkey}`);
-    } else {
-      this.announce('快捷键设置失败，可能被其他程序占用');
-    }
-    this.closeHotkeyRecorder();
+    const confirm = document.getElementById('hotkey-confirm');
+    confirm.disabled = true;
+    try {
+      const result = await window.electronAPI.setHotkey(this._pendingHotkey);
+      if (result.success) {
+        this._currentHotkey = result.hotkey;
+        document.getElementById('hotkey-text').textContent = result.hotkey;
+        document.getElementById('hide-btn').title = `隐藏 (${result.hotkey})`;
+        this.notify(`快捷键已设为 ${result.hotkey}`);
+        this.closeHotkeyRecorder();
+      } else this.notify(result.error || '快捷键设置失败，可能被其他程序占用；原快捷键仍保留');
+    } catch { this.notify('快捷键设置失败，请重试'); }
+    finally { confirm.disabled = !this._pendingHotkey; }
   }
 
-  // ---- Clipboard ----
   loadClipboard() {
     try {
       const data = localStorage.getItem('green-todo-clipboard');
-      return data ? JSON.parse(data) : [];
+      const parsed = data ? JSON.parse(data) : [];
+      return Array.isArray(parsed) ? parsed.filter(item => item && typeof item.id === 'string' && typeof item.text === 'string') : [];
     } catch { return []; }
   }
 
   saveClipboard() {
-    try { localStorage.setItem('green-todo-clipboard', JSON.stringify(this.clipItems)); } catch {}
+    try { localStorage.setItem('green-todo-clipboard', JSON.stringify(this.clipItems)); }
+    catch { this.notify('收藏保存失败，请复制内容另行保存，避免退出后丢失'); }
   }
 
   toggleClipPanel() {
@@ -1333,6 +1448,21 @@ class GreenTodo {
   announce(msg) {
     const el = document.getElementById('aria-announcer');
     if (el) { el.textContent = ''; setTimeout(() => { el.textContent = msg; }, 100); }
+  }
+
+  notify(msg) {
+    let notice = this.container.querySelector('.app-notice');
+    if (!notice) {
+      notice = document.createElement('div');
+      notice.className = 'app-notice';
+      notice.setAttribute('role', 'status');
+      this.container.appendChild(notice);
+    }
+    notice.textContent = msg;
+    notice.hidden = false;
+    clearTimeout(this._noticeTimer);
+    this._noticeTimer = setTimeout(() => { notice.hidden = true; }, 8000);
+    this.announce(msg);
   }
 
   escapeHtml(str) {

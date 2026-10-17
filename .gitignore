@@ -2,3 +2,6 @@ node_modules/
 dist/
 build/icon.png
 src-tauri/target/
+test-results/
+playwright-report/
+.local/

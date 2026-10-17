@@ -5,6 +5,15 @@
     const { invoke } = window.__TAURI__.core;
     const { listen } = window.__TAURI__.event;
 
+    const report = (message) => invoke('report_client_error', { message: String(message).slice(0, 2000) }).catch(() => {});
+    const fire = (command) => invoke(command).catch((error) => {
+      report(`${command}: ${error}`);
+      window.app?.notify('操作失败，请重试；异常信息已记录');
+    });
+    const subscribe = (event, cb) => listen(event, cb).catch((error) => { report(`${event}: ${error}`); });
+    window.addEventListener('error', (event) => report(`${event.message} (${event.filename}:${event.lineno})`));
+    window.addEventListener('unhandledrejection', (event) => report(event.reason?.stack || event.reason));
+
     window.electronAPI = {
       platform: navigator.platform.includes('Mac') ? 'darwin' :
                 navigator.platform.includes('Win') ? 'win32' : 'linux',
@@ -12,16 +21,16 @@
       loadTodosBackup: () => invoke('load_todos_backup'),
       updateTrayProgress: (t, c) => invoke('update_tray_progress', { total: t, completed: c }).catch(() => {}),
       previewPetState: (i) => invoke('preview_pet_state', { index: i }).catch(() => {}),
-      hideWindow: () => invoke('hide_window'),
-      quitApp: () => invoke('quit_app'),
-      toggleAlwaysOnTop: () => invoke('toggle_always_on_top'),
-      onAlwaysOnTopChanged: (cb) => listen('always-on-top-changed', (e) => cb(e.payload)),
+      hideWindow: () => fire('hide_window'),
+      quitApp: () => fire('quit_app'),
+      toggleAlwaysOnTop: () => fire('toggle_always_on_top'),
+      onAlwaysOnTopChanged: (cb) => subscribe('always-on-top-changed', (e) => cb(e.payload)),
       exportData: (j) => invoke('export_data', { jsonStr: j }),
       importData: () => invoke('import_data'),
       getHotkey: () => invoke('get_hotkey'),
       setHotkey: (k) => invoke('set_hotkey', { key: k }),
-      onTriggerExport: (cb) => listen('trigger-export', () => cb()),
-      onTriggerImport: (cb) => listen('trigger-import', () => cb()),
+      onTriggerExport: (cb) => subscribe('trigger-export', () => cb()),
+      onTriggerImport: (cb) => subscribe('trigger-import', () => cb()),
     };
     document.documentElement.setAttribute('data-platform', window.electronAPI.platform);
 
@@ -30,9 +39,9 @@
     document.addEventListener('mousedown', (e) => {
       // Check if the click is on the title bar or its children (but not buttons)
       const titleBar = e.target.closest('.title-bar');
-      if (titleBar && !e.target.closest('.title-bar-right') && !e.target.closest('button')) {
+      if (e.button === 0 && titleBar && !e.target.closest('.title-bar-right') && !e.target.closest('button')) {
         e.preventDefault();
-        win.startDragging();
+        win.startDragging().catch((error) => report(`startDragging: ${error}`));
       }
     });
 

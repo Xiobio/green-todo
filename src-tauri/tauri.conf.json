@@ -1,13 +1,13 @@
 {
-  "$schema": "https://raw.githubusercontent.com/nicedozie4u/tauri-v2-schemas/main/tauri.conf.schema.json",
+  "$schema": "https://schema.tauri.app/config/2",
   "productName": "Green Todo",
-  "version": "2.0.0",
+  "version": "2.0.3",
   "identifier": "com.xiobio.green-todo",
   "build": {
     "frontendDist": "../web",
     "devUrl": "http://localhost:1420",
-    "beforeDevCommand": "npx serve .. -l 1420 -s",
-    "beforeBuildCommand": ""
+    "beforeDevCommand": "node tests/server.cjs --dev",
+    "beforeBuildCommand": "node scripts/check-build.cjs"
   },
   "app": {
     "macOSPrivateApi": true,
@@ -49,7 +49,11 @@
     "windows": {
       "certificateThumbprint": null,
       "digestAlgorithm": "sha256",
-      "timestampUrl": ""
+      "timestampUrl": "",
+      "nsis": {
+        "installerIcon": "icons/icon.ico",
+        "installerHooks": "icons/installer-hooks.nsh"
+      }
     },
     "category": "Productivity"
   }
