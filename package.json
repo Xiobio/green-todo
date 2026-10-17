@@ -1,11 +1,12 @@
 {
   "name": "green-todo",
-  "version": "2.0.2",
+  "version": "2.0.3",
   "description": "A refreshing daily todo app with satisfying animations",
   "main": "main.js",
   "author": "Xiobio",
   "license": "MIT",
   "scripts": {
+    "icons:generate": "node generate-icon.js",
     "start": "tauri dev",
     "build:win": "tauri build --bundles nsis,msi",
     "build:mac": "tauri build --bundles dmg",
@@ -50,7 +51,7 @@
           ]
         }
       ],
-      "icon": "build/icon.png",
+      "icon": "src-tauri/icons/icon.ico",
       "signAndEditExecutable": false
     },
     "mac": {

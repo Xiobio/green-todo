@@ -80,6 +80,8 @@ cargo run --locked --manifest-path src-tauri/Cargo.toml --example windows_smoke
 
 Windows 的异常日志位于 `%APPDATA%\com.xiobio.green-todo\green-todo.log`，记录原生 panic 和前端未处理异常，文件超过 512 KiB 后轮换。备份写入或快捷键注册失败会在界面提示。
 
+应用图标统一来自 `assets/app-icon.svg`，修改后运行 `npm run icons:generate`，同步生成应用、安装/卸载程序、快捷方式使用的 PNG、ICO、ICNS。Windows ICO 包含 16/20/24/32/40/48/64/128/256 像素，覆盖常见显示缩放。Windows 托盘宠物使用绿色描边和浅色面部，适配深浅色任务栏；macOS 使用系统模板图标。可运行 `cargo run --manifest-path src-tauri/Cargo.toml --example icon_preview -- tray-icons.png` 检查所有宠物状态在 16–32 像素下的显示效果。
+
 ## 快捷键
 
 | 快捷键 | 功能 |

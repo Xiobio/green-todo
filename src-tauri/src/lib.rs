@@ -79,7 +79,7 @@ pub fn run() {
             let tray_image = create_tray_image(0, 0);
             let _tray = TrayIconBuilder::with_id("main")
                 .icon(tray_image)
-                .icon_as_template(false) // user wants pure white icon always
+                .icon_as_template(cfg!(target_os = "macos"))
                 .tooltip("Green Todo")
                 .menu(&menu)
                 .show_menu_on_left_click(false)

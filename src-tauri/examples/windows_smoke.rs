@@ -4,6 +4,9 @@
 mod hotkey;
 #[path = "../src/storage.rs"]
 mod storage;
+#[allow(dead_code)]
+#[path = "../src/tray_icon.rs"]
+mod tray_icon;
 
 #[cfg(windows)]
 fn check(app: &tauri::AppHandle) -> Result<(), String> {
@@ -35,6 +38,10 @@ fn check(app: &tauri::AppHandle) -> Result<(), String> {
     window.hide().map_err(|e| e.to_string())?;
     let tray = TrayIconBuilder::with_id("smoke").tooltip("Green Todo test").build(app).map_err(|e| e.to_string())?;
     tray.set_tooltip(Some("updated")).map_err(|e| e.to_string())?;
+    for state in tray_icon::PET_STATES {
+        let icon = tray_icon::render_pet_icon_for_state(state, 5, 3);
+        tray.set_icon(Some(tauri::image::Image::new_owned(icon.data, icon.width, icon.height))).map_err(|e| e.to_string())?;
+    }
     app.global_shortcut().unregister_all().map_err(|e| e.to_string())?;
     println!("Windows native smoke passed: registration, conflict rollback, persistence, corrupt config, window and tray calls");
     Ok(())

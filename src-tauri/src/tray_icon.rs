@@ -162,6 +162,16 @@ pub fn render_pet_icon(total: u32, completed: u32) -> IconBuffer {
 }
 
 pub fn render_pet_icon_for_state(state: &PetState, total: u32, completed: u32) -> IconBuffer {
+    #[allow(unused_mut)]
+    let mut buf = render_monochrome_pet_icon(state, total, completed);
+    // Windows does not recolor a macOS template image. A white silhouette on
+    // transparency disappears on a light taskbar, including after progress updates.
+    #[cfg(not(target_os = "macos"))]
+    colorize_pet_icon(&mut buf);
+    buf
+}
+
+fn render_monochrome_pet_icon(state: &PetState, total: u32, completed: u32) -> IconBuffer {
     let cells = total.min(5) as i32;
     let filled = if total <= 5 { completed as i32 } else { ((completed as f64 / total as f64) * 5.0).round() as i32 };
 
@@ -217,6 +227,35 @@ pub fn render_pet_icon_for_state(state: &PetState, total: u32, completed: u32) -
     }
 
     buf
+}
+
+#[cfg(any(not(target_os = "macos"), test))]
+fn colorize_pet_icon(buf: &mut IconBuffer) {
+    let mask = buf.data.clone();
+    let outline = [13, 87, 53];
+    for y in 0..buf.height as i32 {
+        for x in 0..buf.width as i32 {
+            // A dark rim remains visible on white; the mint face remains visible
+            // on dark backgrounds. Draw an opaque backing for facial cutouts too.
+            let mut alpha = 0;
+            for dy in -2i32..=2 {
+                for dx in -2i32..=2 {
+                    if dx * dx + dy * dy > 4 { continue; }
+                    let (sx, sy) = (x + dx, y + dy);
+                    if sx >= 0 && sy >= 0 && sx < buf.width as i32 && sy < buf.height as i32 {
+                        alpha = alpha.max(mask[((sy as u32 * buf.width + sx as u32) * 4 + 3) as usize]);
+                    }
+                }
+            }
+            if ((x as f64 + 0.5 - 27.0).powi(2) + (y as f64 + 0.5 - 32.0).powi(2)).sqrt() < 14.0 {
+                alpha = 255;
+            }
+            let i = ((y as u32 * buf.width + x as u32) * 4) as usize;
+            buf.data[i..i + 4].copy_from_slice(&[outline[0], outline[1], outline[2], alpha]);
+            let fill = if y < 18 || y >= 48 { [37, 201, 114] } else { [230, 255, 237] };
+            buf.set_pixel_blend(x, y, fill[0], fill[1], fill[2], mask[i + 3]);
+        }
+    }
 }
 
 /// Draw a thick line between two points
@@ -404,6 +443,72 @@ fn draw_mouth(buf: &mut IconBuffer, mouth: &str, cx: f64, m_y: f64) {
             buf.erase_circle(cx, m_y + 1.5, 5.0);
         }
         _ => {} // "none"
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn packaged_windows_icons_have_visible_artwork_at_every_dpi_size() {
+        let ico = include_bytes!("../icons/icon.ico");
+        assert_eq!(&ico[..6], &[0, 0, 1, 0, 9, 0]);
+        for (frame, size) in [16u32, 20, 24, 32, 40, 48, 64, 128, 256].iter().enumerate() {
+            let entry = 6 + frame * 16;
+            let length = u32::from_le_bytes(ico[entry + 8..entry + 12].try_into().unwrap()) as usize;
+            let offset = u32::from_le_bytes(ico[entry + 12..entry + 16].try_into().unwrap()) as usize;
+            let decoder = png::Decoder::new(std::io::Cursor::new(&ico[offset..offset + length]));
+            let mut reader = decoder.read_info().unwrap();
+            let mut pixels = vec![0; reader.output_buffer_size()];
+            let info = reader.next_frame(&mut pixels).unwrap();
+            assert_eq!((info.width, info.height), (*size, *size));
+            assert_eq!(info.color_type, png::ColorType::Rgba);
+            let pixels = &pixels[..info.buffer_size()];
+            let opaque = pixels.chunks_exact(4).filter(|p| p[3] >= 240).count();
+            let foreground = pixels.chunks_exact(4).filter(|p| p[0] > 180 && p[1] > 180 && p[2] > 100 && p[3] >= 200).count();
+            let area = (size * size) as usize;
+            assert!(opaque > area * 2 / 5, "{size}px icon is mostly transparent");
+            assert!(foreground > area / 15, "{size}px icon is missing the sprout/check artwork");
+        }
+    }
+
+    #[test]
+    fn all_pet_states_remain_visible_on_light_and_dark_windows_taskbars() {
+        for state in PET_STATES {
+            for (total, completed) in [(0, 0), (5, 0), (5, 3), (5, 5), (100, 80)] {
+                let mut icon = render_monochrome_pet_icon(state, total, completed);
+                colorize_pet_icon(&mut icon);
+                assert_eq!(icon.data.len(), (icon.width * icon.height * 4) as usize);
+                assert_eq!(icon.data[3], 0, "background must stay transparent");
+                for size in [16, 20, 24, 32] {
+                    let mut visible_on_white = 0;
+                    let mut visible_on_dark = 0;
+                    for y in 0..size {
+                        for x in 0..size {
+                            // Average premultiplied samples, approximating shell downscaling.
+                            let mut color = [0.0; 3];
+                            let mut alpha = 0.0;
+                            for sy in 0..8 {
+                                for sx in 0..8 {
+                                    let px = ((x as f64 + (sx as f64 + 0.5) / 8.0) * icon.width as f64 / size as f64) as u32;
+                                    let py = ((y as f64 + (sy as f64 + 0.5) / 8.0) * icon.height as f64 / size as f64) as u32;
+                                    let i = ((py * icon.width + px) * 4) as usize;
+                                    let a = icon.data[i + 3] as f64 / 255.0 / 64.0;
+                                    alpha += a;
+                                    for c in 0..3 { color[c] += icon.data[i + c] as f64 * a; }
+                                }
+                            }
+                            let luminance = color[0] * 0.2126 + color[1] * 0.7152 + color[2] * 0.0722;
+                            if 255.0 * alpha - luminance >= 70.0 { visible_on_white += 1; }
+                            if luminance - 24.0 * alpha >= 70.0 { visible_on_dark += 1; }
+                        }
+                    }
+                    assert!(visible_on_white >= 12, "{} at {size}px disappears on white ({visible_on_white} pixels)", state.id);
+                    assert!(visible_on_dark >= 12, "{} at {size}px disappears on dark ({visible_on_dark} pixels)", state.id);
+                }
+            }
+        }
     }
 }
 
